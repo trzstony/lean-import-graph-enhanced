@@ -1,4 +1,4 @@
-# Lean Import Graph
+# Lean Import Graph Enhanced
 
 `importGraph` is a reusable Lake package for inspecting Lean imports and the
 declarations that make those imports necessary. It is based on the community
