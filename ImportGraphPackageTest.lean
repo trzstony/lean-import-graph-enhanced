@@ -1,0 +1,10 @@
+import ImportGraphPackageTest.AnotherFileWithTransitiveImports
+import ImportGraphPackageTest.Dot
+import ImportGraphPackageTest.FileWithTransitiveImports
+import ImportGraphPackageTest.FromSource
+import ImportGraphPackageTest.Imports
+import ImportGraphPackageTest.Unused
+import ImportGraphPackageTest.Used
+import ImportGraphPackageTest.ToTarget
+import ImportGraphPackageTest.WithSorry.Def
+import ImportGraphPackageTest.WithSorry.Thm

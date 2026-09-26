@@ -1,5 +1,5 @@
 import ImportGraph.Imports.RequiredModules
-import ImportGraphTest.Used
+import ImportGraphPackageTest.Used
 import ImportGraph.Tools
 import ImportGraph.Imports.Unused
 
@@ -46,11 +46,11 @@ info: Transitively unused imports of Init.System.IO:
 #unused_transitive_imports Init.Control.StateRef Init.System.IO Init.Control.Reader Init.Control.Basic
 
 /--
-info: Transitively unused imports of ImportGraphTest.Used:
-  ImportGraphTest.Unused
+info: Transitively unused imports of ImportGraphPackageTest.Used:
+  ImportGraphPackageTest.Unused
 -/
 #guard_msgs in
-#unused_transitive_imports ImportGraphTest.Used ImportGraphTest.Unused Init.Control.Reader
+#unused_transitive_imports ImportGraphPackageTest.Used ImportGraphPackageTest.Unused Init.Control.Reader
 
 elab "#transitivelyRequiredModules_test" : command => do
   let env ← getEnv

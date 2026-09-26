@@ -6,7 +6,7 @@ license = "Apache-2.0"
 licenseFiles = ["LICENSE"]
 
 defaultTargets = ["ImportGraph", "graph"]
-testRunner = "ImportGraphTest"
+testRunner = "ImportGraphPackageTest"
 
 [[require]]
 name = "Cli"

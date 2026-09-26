@@ -1,0 +1,11 @@
+digraph "import_graph" {
+  "ImportGraphPackageTest.ToTarget" [shape=house];
+  "ImportGraphPackageTest.Used" -> "ImportGraphPackageTest.ToTarget";
+  "ImportGraphPackageTest.WithSorry.Def" -> "ImportGraphPackageTest.ToTarget";
+  "ImportGraphPackageTest.WithSorry.Thm" -> "ImportGraphPackageTest.ToTarget";
+  "ImportGraphPackageTest.Unused" [style=filled, fillcolor="#e0e0e0", shape=ellipse];
+  "ImportGraphPackageTest.WithSorry.Def" [style=filled, fillcolor="#ffd700", shape=ellipse];
+  "ImportGraphPackageTest.WithSorry.Thm" [style=filled, fillcolor="#ffd700", shape=ellipse];
+  "ImportGraphPackageTest.Used" [shape=ellipse];
+  "ImportGraphPackageTest.Unused" -> "ImportGraphPackageTest.Used";
+}

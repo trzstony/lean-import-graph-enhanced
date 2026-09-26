@@ -6,7 +6,7 @@ def readFile (path : System.FilePath) : IO String :=
 def runGraphCommand : IO Unit := do
   let _ ← IO.Process.output {
     cmd := "lake"
-    args := #["exe", "graph", "--to", "ImportGraphTest.ToTarget", "--mark-sorry", "ImportGraphTest/produced.dot"]
+    args := #["exe", "graph", "--to", "ImportGraphPackageTest.ToTarget", "--mark-sorry", "ImportGraphPackageTest/produced.dot"]
   }
 
 def compareOutputs (expected : String) (actual : String) : IO Bool := do
@@ -18,8 +18,8 @@ def compareOutputs (expected : String) (actual : String) : IO Bool := do
 #guard_msgs in
 #eval show IO Unit from do
   runGraphCommand
-  let expectedOutput ← readFile "ImportGraphTest/expected.dot"
-  let actualOutput ← readFile "ImportGraphTest/produced.dot"
+  let expectedOutput ← readFile "ImportGraphPackageTest/expected.dot"
+  let actualOutput ← readFile "ImportGraphPackageTest/produced.dot"
   let isEqual ← compareOutputs expectedOutput actualOutput
   if isEqual then
     IO.println "Test passed: The graph command output matches the expected.dot file."

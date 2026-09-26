@@ -92,7 +92,7 @@ needed when exporting formats other than `.dot`, `.gexf`, or `.html`.
 ```bash
 lake build
 lake test
-lake exe graph --to ImportGraphTest.ToTarget ImportGraphTest/test.html
+lake exe graph --to ImportGraphPackageTest.ToTarget ImportGraphPackageTest/test.html
 ```
 
 The test suite covers import analysis, source parsing, tool commands, and the
