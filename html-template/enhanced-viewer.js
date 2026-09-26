@@ -12,6 +12,7 @@ const imports = graphologyLibrary.gexf.parse(graphology.Graph, IMPORTS_GEXF);
 const modules = imports.nodes().sort();
 const sourceFiles = [...new Set([...modules, ...(DECLARATIONS.files || [])])].sort();
 const declarations = new Map(DECLARATIONS.nodes.map(decl => [decl.id, decl]));
+const directImports = DECLARATIONS.directImports || [];
 // Generated internal declarations stay out of the visible graph, but their
 // metadata lets support tracing follow compiled proof dependencies through them.
 const supportDeclarations = new Map(
@@ -28,6 +29,7 @@ function addFileLink(source, target, uses = 0) {
   fileLinks.get(key)[uses ? "uses" : "imports"]++;
 }
 imports.forEachEdge((_id, _attrs, source, target) => addFileLink(source, target));
+for (const { source, target } of directImports) addFileLink(source, target);
 for (const edge of DECLARATIONS.edges) {
   addFileLink(declarations.get(edge.source)?.file, declarations.get(edge.target)?.file, 1);
 }
@@ -111,7 +113,6 @@ for (const edge of DECLARATIONS.edges) {
   const to = declarations.get(edge.target)?.file;
   if (from && to && from !== to) usedFilePairs.add(JSON.stringify([from, to]));
 }
-const directImports = DECLARATIONS.directImports || [];
 const importCandidates = [];
 const candidateKeys = new Set();
 for (const { source, target } of directImports) {
@@ -663,6 +664,9 @@ function renderEdges() {
   const importEdges = new Map();
   imports.forEachEdge((_id, _attrs, source, target) =>
     importEdges.set(JSON.stringify([source, target]), { source, target }));
+  for (const edge of directImports) {
+    importEdges.set(JSON.stringify([edge.source, edge.target]), edge);
+  }
   if (auditMode) {
     for (const edge of importCandidates) importEdges.set(edge.key, edge);
   }

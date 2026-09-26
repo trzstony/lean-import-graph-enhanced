@@ -33,8 +33,8 @@ import auditing.
   files are not marked as declaration support.
 - **File-decoupling audit.** `--file-decoupling report.md` compares direct
   source imports with cross-file declaration uses and writes a reviewable
-  Markdown table. The viewer exposes the same candidates, while preserving the
-  full source import list even when the visual graph is transitively reduced.
+  Markdown table. The viewer exposes the same candidates and preserves direct
+  source-import links while reducing transitive-only edges in the layout.
   The file-decoupling panel also lists theorem sinks: theorems with no outgoing
   declaration-use edge in the compiled graph.
 - **Source-only analysis.** `ImportGraph.Imports.FromSource` parses imports
