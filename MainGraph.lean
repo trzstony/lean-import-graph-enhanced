@@ -94,7 +94,8 @@ private def declarationKind (ci : ConstantInfo) : String :=
 /-- Keep public declarations and user-authored private declarations visible while
     routing generated equation and matcher details through the support graph. -/
 private def isUserAuthoredPrivateName (name : Name) : Bool :=
-  isPrivateName name && !(privateToUserName name).isInternalDetail
+  isPrivateName name &&
+    !((privateToUserName name).components.any (fun component => component.isInternalDetail))
 
 private def isVisibleDeclarationName (name : Name) : Bool :=
   !name.isInternal || isUserAuthoredPrivateName name
