@@ -12,6 +12,10 @@ const imports = graphologyLibrary.gexf.parse(graphology.Graph, IMPORTS_GEXF);
 const modules = imports.nodes().sort();
 const sourceFiles = [...new Set([...modules, ...(DECLARATIONS.files || [])])].sort();
 const declarations = new Map(DECLARATIONS.nodes.map(decl => [decl.id, decl]));
+// Generated internal declarations stay out of the visible graph, but their
+// metadata lets support tracing follow compiled proof dependencies through them.
+const supportDeclarations = new Map(
+  (DECLARATIONS.supportNodes || []).map(decl => [decl.id, decl]));
 const byFile = new Map(modules.map(file => [file, []]));
 for (const decl of DECLARATIONS.nodes) byFile.get(decl.file)?.push(decl);
 for (const list of byFile.values()) list.sort((a, b) => a.id.localeCompare(b.id));
@@ -81,10 +85,16 @@ const highlightedFiles = new Set();
 const highlightedDeclarations = new Set();
 const supportRoots = new Set();
 const supportFiles = new Set();
-const incomingEdges = new Map();
+const supportIncomingEdges = new Map();
+function addIncomingEdge(edge) {
+  if (!supportIncomingEdges.has(edge.target)) supportIncomingEdges.set(edge.target, []);
+  supportIncomingEdges.get(edge.target).push(edge);
+}
 for (const edge of DECLARATIONS.edges) {
-  if (!incomingEdges.has(edge.target)) incomingEdges.set(edge.target, []);
-  incomingEdges.get(edge.target).push(edge);
+  addIncomingEdge(edge);
+}
+for (const edge of DECLARATIONS.supportEdges || []) {
+  addIncomingEdge(edge);
 }
 const selectionOrder = [];
 let selected = null;
@@ -124,8 +134,8 @@ function rebuildSupportFiles() {
     const id = queue[i];
     if (seen.has(id)) continue;
     seen.add(id);
-    for (const edge of incomingEdges.get(id) || []) {
-      const source = declarations.get(edge.source);
+    for (const edge of supportIncomingEdges.get(id) || []) {
+      const source = declarations.get(edge.source) || supportDeclarations.get(edge.source);
       if (source && byFile.has(source.file)) supportFiles.add(source.file);
       queue.push(edge.source);
     }

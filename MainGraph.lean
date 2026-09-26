@@ -91,12 +91,18 @@ private def declarationKind (ci : ConstantInfo) : String :=
   | .recInfo _ => "recursor"
   | .quotInfo _ => "quotient"
 
-/-- Match the declaration filter used by the GEXF exporter in the pinned importGraph package. -/
+/-- Keep user declarations visible while routing generated implementation details
+    through the support graph. Private declarations are encoded as internal names,
+    but they are still user-authored declarations and belong in the file view. -/
+private def isVisibleDeclarationName (name : Name) : Bool :=
+  !name.isInternal || isPrivateName name
+
+/-- Match the declaration filter used by the package GEXF exporter. -/
 private def isGexfBlacklisted (env : Environment) (name : Name) : Bool :=
   name == ``sorryAx ||
     name matches .str _ "inj" ||
     name matches .str _ "noConfusionType" ||
-    name.isInternalDetail ||
+    (name.isInternalDetail && !isPrivateName name) ||
     Lean.isAuxRecursor env name ||
     Lean.isNoConfusion env name ||
     Lean.isRecCore env name ||
@@ -160,6 +166,7 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
   let constants := env.constants.map₁.toList
   let total := constants.length
   let checkpoint := max 1 (total / 100)
+  let mut allDeclModules : NameMap Name := {}
   let mut declModules : NameMap Name := {}
   let mut nodes : Array Json := #[]
   let mut index := 0
@@ -168,10 +175,11 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
     if index % checkpoint == 0 || index == total then
       progress.render (35 + 20 * index / max 1 total)
         s!"Indexing declarations ({index}/{total})"
-    if name.isInternal then continue
     let some idx := env.getModuleIdxFor? name | continue
     let moduleName := env.header.moduleNames[idx.toNat]!
     if !modules.contains moduleName then continue
+    allDeclModules := allDeclModules.insert name moduleName
+    if !isVisibleDeclarationName name then continue
     declModules := declModules.insert name moduleName
     nodes := nodes.push <| Json.mkObj [
       ("id", Json.str name.toString),
@@ -179,6 +187,8 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
       ("kind", Json.str (declarationKind ci))]
 
   let mut edges : Array Json := #[]
+  let mut supportEdges : Array Json := #[]
+  let mut supportNames : NameSet := {}
   let mut usedFilePairs : NameMap NameSet := {}
   index := 0
   for (name, ci) in constants do
@@ -186,16 +196,31 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
     if index % checkpoint == 0 || index == total then
       progress.render (55 + 35 * index / max 1 total)
         s!"Tracing declaration uses ({index}/{total})"
-    let some targetModule := declModules.find? name | continue
+    let some targetModule := allDeclModules.find? name | continue
     for used in ci.getUsedConstantsAsSet do
       if used == name then continue
-      let some sourceModule := declModules.find? used | continue
-      edges := edges.push <| Json.mkObj [
-        ("source", Json.str used.toString),
-        ("target", Json.str name.toString)]
-      if sourceModule != targetModule then
-        let usedModules := (usedFilePairs.find? targetModule).getD {}
-        usedFilePairs := usedFilePairs.insert targetModule (usedModules.insert sourceModule)
+      let some sourceModule := allDeclModules.find? used | continue
+      let edge := Json.mkObj [
+          ("source", Json.str used.toString),
+          ("target", Json.str name.toString)]
+      if !isVisibleDeclarationName name || !isVisibleDeclarationName used then
+        supportEdges := supportEdges.push edge
+        if !isVisibleDeclarationName name then supportNames := supportNames.insert name
+        if !isVisibleDeclarationName used then supportNames := supportNames.insert used
+      else if declModules.contains name && declModules.contains used then
+        edges := edges.push edge
+        if sourceModule != targetModule then
+          let usedModules := (usedFilePairs.find? targetModule).getD {}
+          usedFilePairs := usedFilePairs.insert targetModule (usedModules.insert sourceModule)
+
+  let mut supportNodes : Array Json := #[]
+  for (name, ci) in constants do
+    if supportNames.contains name then
+      let some moduleName := allDeclModules.find? name | continue
+      supportNodes := supportNodes.push <| Json.mkObj [
+        ("id", Json.str name.toString),
+        ("file", Json.str moduleName.toString),
+        ("kind", Json.str (declarationKind ci))]
 
   progress.render 92 "Checking file-decoupling candidates"
   let mut candidates : Array (Name × Name) := #[]
@@ -215,6 +240,8 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
   return (Json.mkObj [
     ("nodes", Json.arr nodes),
     ("edges", Json.arr edges),
+    ("supportNodes", Json.arr supportNodes),
+    ("supportEdges", Json.arr supportEdges),
     ("directImports", Json.arr directImportsJson),
     ("files", Json.arr (sourceFiles.map Json.str))], candidates)
 

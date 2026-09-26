@@ -19,7 +19,7 @@ private def isBlackListed (env : Environment) (declName : Name) : Bool :=
   declName == ``sorryAx
   || declName matches .str _ "inj"
   || declName matches .str _ "noConfusionType"
-  || declName.isInternalDetail
+  || (declName.isInternalDetail && !isPrivateName declName)
   || isAuxRecursor env declName
   || isNoConfusion env declName
   || isRecCore env declName

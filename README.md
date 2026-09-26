@@ -14,9 +14,9 @@ import auditing.
   file imports, declaration nodes, and declaration-use edges are embedded in the
   output.
 - **File and declaration exploration.** Expand a file to see its definitions,
-  theorems, constructors, inductives, axioms, and other declarations. Teal
-  arrows show declaration prerequisites; orange arrows show declarations that
-  use the selected declaration.
+  theorems, private lemmas and theorems, constructors, inductives, axioms, and
+  other declarations. Teal arrows show declaration prerequisites; orange arrows
+  show declarations that use the selected declaration.
 - **Interactive navigation.** Search files or declarations, drag to pan,
   fit the graph, reset the view, and use keyboard focus to inspect a graph
   without a mouse.
@@ -26,8 +26,9 @@ import auditing.
   separate while revealing strongly connected regions.
 - **Directory coloring and support tracing.** Color independent folders or a
   complete subtree. Selecting a declaration can highlight the files that provide
-  its transitive compiled prerequisites; import-only files are not marked as
-  declaration support.
+  its transitive compiled prerequisites, including generated internal proof
+  helpers; private lemmas and theorems remain visible in their file. Import-only
+  files are not marked as declaration support.
 - **File-decoupling audit.** `--file-decoupling report.md` compares direct
   source imports with cross-file declaration uses and writes a reviewable
   Markdown table. The viewer exposes the same candidates, while preserving the
