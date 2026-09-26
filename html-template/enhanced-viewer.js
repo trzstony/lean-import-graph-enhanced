@@ -549,6 +549,7 @@ function selectedNodeForDeclaration(id) {
 }
 function renderSelectedConnections() {
   const entries = new Map();
+  const pairKey = (left, right) => JSON.stringify(left < right ? [left, right] : [right, left]);
   const add = (from, to, declaration, title) => {
     if (from === to) return;
     const key = JSON.stringify([declaration ? "declaration" : "file", from, to]);
@@ -558,20 +559,38 @@ function renderSelectedConnections() {
   // `connections` is the complete undirected file graph: it includes both
   // import links and compiled declaration-use links. Treating it as a set of
   // pairs makes selection order irrelevant and includes every selected pair.
+  const selectedDeclarationPairs = new Set();
+  for (const edge of DECLARATIONS.edges) {
+    const sourceFile = declarations.get(edge.source)?.file;
+    const targetFile = declarations.get(edge.target)?.file;
+    if (sourceFile && targetFile && sourceFile !== targetFile &&
+        highlightedFiles.has(sourceFile) && highlightedFiles.has(targetFile)) {
+      selectedDeclarationPairs.add(pairKey(sourceFile, targetFile));
+    }
+  }
   for (const { a, b } of connections) {
     if (highlightedFiles.has(a) && highlightedFiles.has(b)) {
-      add(a, b, false, `Connection between ${a} and ${b}`);
+      const expandedPair = expanded.has(a) || expanded.has(b);
+      if (!expandedPair || !selectedDeclarationPairs.has(pairKey(a, b))) {
+        add(a, b, false, `Connection between ${a} and ${b}`);
+      }
     }
   }
 
-  // When declarations are selected, preserve their directed declaration-use
-  // edges. A file-level edge above already covers the case where both visible
-  // endpoints are file nodes.
+  // Expanded selected files expose every directed declaration-use edge between
+  // them. A collapsed endpoint stays represented by its file node, while an
+  // explicitly selected declaration remains visible even in a collapsed file.
   for (const edge of DECLARATIONS.edges) {
-    const from = selectedNodeForDeclaration(edge.source);
-    const to = selectedNodeForDeclaration(edge.target);
-    if (!from || !to || (from === declarations.get(edge.source)?.file &&
-        to === declarations.get(edge.target)?.file)) continue;
+    const source = declarations.get(edge.source), target = declarations.get(edge.target);
+    if (!source || !target) continue;
+    const filesSelected = highlightedFiles.has(source.file) && highlightedFiles.has(target.file);
+    const from = filesSelected ?
+      (highlightedDeclarations.has(edge.source) || expanded.has(source.file) ? edge.source : source.file) :
+      selectedNodeForDeclaration(edge.source);
+    const to = filesSelected ?
+      (highlightedDeclarations.has(edge.target) || expanded.has(target.file) ? edge.target : target.file) :
+      selectedNodeForDeclaration(edge.target);
+    if (!from || !to || (from === source.file && to === target.file)) continue;
     add(from, to, true, `${edge.source} → ${edge.target}`);
   }
 
@@ -844,8 +863,8 @@ function focusSupportFiles() {
 }
 function toggle(file) {
   if (expanded.has(file)) expanded.delete(file); else expanded.add(file);
-  // Opening a file leaves its connections hidden unless selected or shown with the eye button.
-  setSelection("file", file, false);
+  // Preserve file selection while expanding so selected pairs keep their
+  // file-level and declaration-level connections visible.
   layout(); render(); centerOn(file);
 }
 function setSelection(type, id, active) {
