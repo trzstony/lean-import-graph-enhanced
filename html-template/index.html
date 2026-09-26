@@ -71,6 +71,10 @@
     #import-audit { flex: 0 0 35%; min-height: 150px; overflow: auto; padding: 16px;
       border-bottom: 1px solid #dce3ed; }
     .audit-active .directory-panel { flex-basis: 35%; }
+    #theorem-sinks[hidden] { display: none; }
+    #theorem-sinks { flex: 0 0 35%; min-height: 150px; overflow: auto; padding: 16px;
+      border-bottom: 1px solid #dce3ed; }
+    .sinks-active .directory-panel { flex-basis: 35%; }
     #import-audit p { font-size: 12px; }
     #import-audit h3 { margin: 16px 0 10px; font-size: 14px; }
     .audit-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
@@ -143,6 +147,9 @@
     <button id="import-audit-button" class="icon-button" type="button" aria-label="Show file decoupling" aria-pressed="false" title="Show file decoupling">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H6a4 4 0 0 0 0 8h3m6-8h3a4 4 0 0 1 0 8h-3M8 12h3m2 0h3"/><path d="M12 3v4m0 10v4"/></svg>
     </button>
+    <button id="theorem-sinks-button" class="icon-button" type="button" aria-label="Show theorem sinks" aria-pressed="false" title="Show theorem sinks">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h12M8 9h8m-6 4h4m-2 0v6m0 0-3-3m3 3 3-3"/></svg>
+    </button>
     <button id="fit" type="button">Fit graph</button>
     <button id="reset-view" class="icon-button" type="button" aria-label="Reset graph to default" title="Reset graph to default">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10.5 9-7.5 9 7.5M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></svg>
@@ -181,6 +188,7 @@
         <div id="directory-tree"></div>
       </section>
       <section id="import-audit" aria-label="File decoupling report" hidden></section>
+      <section id="theorem-sinks" aria-label="Theorem sinks" hidden></section>
       <section id="details"><h2>Explore the graph</h2></section>
     </aside>
   </main>

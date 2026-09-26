@@ -91,18 +91,20 @@ private def declarationKind (ci : ConstantInfo) : String :=
   | .recInfo _ => "recursor"
   | .quotInfo _ => "quotient"
 
-/-- Keep user declarations visible while routing generated implementation details
-    through the support graph. Private declarations are encoded as internal names,
-    but they are still user-authored declarations and belong in the file view. -/
+/-- Keep public declarations and user-authored private declarations visible while
+    routing generated equation and matcher details through the support graph. -/
+private def isUserAuthoredPrivateName (name : Name) : Bool :=
+  isPrivateName name && !(privateToUserName name).isInternalDetail
+
 private def isVisibleDeclarationName (name : Name) : Bool :=
-  !name.isInternal || isPrivateName name
+  !name.isInternal || isUserAuthoredPrivateName name
 
 /-- Match the declaration filter used by the package GEXF exporter. -/
 private def isGexfBlacklisted (env : Environment) (name : Name) : Bool :=
   name == ``sorryAx ||
     name matches .str _ "inj" ||
     name matches .str _ "noConfusionType" ||
-    (name.isInternalDetail && !isPrivateName name) ||
+    (name.isInternalDetail && !isUserAuthoredPrivateName name) ||
     Lean.isAuxRecursor env name ||
     Lean.isNoConfusion env name ||
     Lean.isRecCore env name ||

@@ -1046,13 +1046,25 @@ function renderImportAudit() {
     importCell.textContent = source;
   }
   importAudit.appendChild(table);
+}
 
-  const sinkHeading = document.createElement("h3");
-  sinkHeading.textContent = `Theorem sinks (${theoremSinks.length})`;
-  importAudit.appendChild(sinkHeading);
-  const sinkExplanation = document.createElement("p");
-  sinkExplanation.textContent = "Theorems with no outgoing declaration-use edge: no compiled declaration in this graph uses them.";
-  importAudit.appendChild(sinkExplanation);
+const sinksPanel = document.getElementById("theorem-sinks");
+const sinksButton = document.getElementById("theorem-sinks-button");
+let sinksMode = false;
+function updateSinksButton() {
+  sinksButton.setAttribute("aria-pressed", String(sinksMode));
+  sinksButton.title = sinksMode ? "Hide theorem sinks" : "Show theorem sinks";
+  sinksPanel.hidden = !sinksMode;
+  document.querySelector("aside").classList.toggle("sinks-active", sinksMode);
+}
+function renderTheoremSinks() {
+  sinksPanel.replaceChildren();
+  const heading = document.createElement("h2");
+  heading.textContent = `Theorem sinks (${theoremSinks.length})`;
+  sinksPanel.appendChild(heading);
+  const explanation = document.createElement("p");
+  explanation.textContent = "Theorems with no outgoing declaration-use edge: no compiled declaration in this graph uses them.";
+  sinksPanel.appendChild(explanation);
   if (!theoremSinks.length) return;
   const sinkTable = document.createElement("table");
   sinkTable.className = "audit-table sink-table";
@@ -1080,15 +1092,22 @@ function renderImportAudit() {
     theoremCell.appendChild(button);
     row.insertCell().textContent = theorem.file;
   }
-  importAudit.appendChild(sinkTable);
+  sinksPanel.appendChild(sinkTable);
 }
+
 auditButton.addEventListener("click", () => {
   auditMode = !auditMode;
   updateAuditButton();
   renderEdges();
 });
+sinksButton.addEventListener("click", () => {
+  sinksMode = !sinksMode;
+  updateSinksButton();
+});
 renderImportAudit();
 updateAuditButton();
+renderTheoremSinks();
+updateSinksButton();
 document.getElementById("clear-colors").addEventListener("click", () => {
   folderSelections.clear();
   for (const id of [...supportRoots]) setSelection("declaration", id, false);
@@ -1113,6 +1132,8 @@ document.getElementById("reset-view").addEventListener("click", () => {
   updateSelectionConnectionsButton();
   auditMode = false;
   updateAuditButton();
+  sinksMode = false;
+  updateSinksButton();
   renderDirectoryTree(); layout(); render(); focus();
 });
 search.addEventListener("input", () => {

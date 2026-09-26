@@ -35,8 +35,10 @@ import auditing.
   source imports with cross-file declaration uses and writes a reviewable
   Markdown table. The viewer exposes the same candidates and preserves direct
   source-import links while reducing transitive-only edges in the layout.
-  The file-decoupling panel also lists theorem sinks: theorems with no outgoing
-  declaration-use edge in the compiled graph.
+- **Theorem-sink report.** The sink icon opens a separate list of visible
+  theorems with no outgoing declaration-use edge in the compiled graph. Generated
+  equation and matcher details are excluded from both the declaration graph and
+  this report.
 - **Source-only analysis.** `ImportGraph.Imports.FromSource` parses imports
   directly from `.lean` files, so scripts and linters can inspect files before
   they are compiled.
