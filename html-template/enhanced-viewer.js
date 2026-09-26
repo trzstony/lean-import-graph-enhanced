@@ -123,6 +123,10 @@ for (const { source, target } of directImports) {
   }
 }
 importCandidates.sort((a, b) => a.target.localeCompare(b.target) || a.source.localeCompare(b.source));
+const theoremSinks = DECLARATIONS.nodes
+  .filter(decl => decl.kind === "theorem" &&
+    !DECLARATIONS.edges.some(edge => edge.source === decl.id))
+  .sort((a, b) => a.id.localeCompare(b.id));
 
 // Follow compiled declaration uses, never import edges. The roots themselves
 // are not support; only declarations reached as prerequisites contribute files.
@@ -1038,6 +1042,41 @@ function renderImportAudit() {
     importCell.textContent = source;
   }
   importAudit.appendChild(table);
+
+  const sinkHeading = document.createElement("h3");
+  sinkHeading.textContent = `Theorem sinks (${theoremSinks.length})`;
+  importAudit.appendChild(sinkHeading);
+  const sinkExplanation = document.createElement("p");
+  sinkExplanation.textContent = "Theorems with no outgoing declaration-use edge: no compiled declaration in this graph uses them.";
+  importAudit.appendChild(sinkExplanation);
+  if (!theoremSinks.length) return;
+  const sinkTable = document.createElement("table");
+  sinkTable.className = "audit-table sink-table";
+  const sinkHead = sinkTable.createTHead().insertRow();
+  for (const label of ["Theorem", "File"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    sinkHead.appendChild(cell);
+  }
+  const sinkBody = sinkTable.createTBody();
+  for (const theorem of theoremSinks) {
+    const row = sinkBody.insertRow();
+    const theoremCell = row.insertCell();
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = theorem.id;
+    button.title = `Show ${theorem.id}`;
+    button.addEventListener("click", () => {
+      expanded.add(theorem.file);
+      setSelection("file", theorem.file, true);
+      setSelection("declaration", theorem.id, true);
+      layout(); render(); centerOn(theorem.file);
+    });
+    theoremCell.appendChild(button);
+    row.insertCell().textContent = theorem.file;
+  }
+  importAudit.appendChild(sinkTable);
 }
 auditButton.addEventListener("click", () => {
   auditMode = !auditMode;
