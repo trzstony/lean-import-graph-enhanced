@@ -100,6 +100,9 @@ private def isUserAuthoredPrivateName (name : Name) : Bool :=
 private def isVisibleDeclarationName (name : Name) : Bool :=
   !name.isInternal || isUserAuthoredPrivateName name
 
+private def declarationLabel (name : Name) : String :=
+  (if isPrivateName name then privateToUserName name else name).toString
+
 /-- Match the declaration filter used by the package GEXF exporter. -/
 private def isGexfBlacklisted (env : Environment) (name : Name) : Bool :=
   name == ``sorryAx ||
@@ -186,6 +189,7 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
     declModules := declModules.insert name moduleName
     nodes := nodes.push <| Json.mkObj [
       ("id", Json.str name.toString),
+      ("label", Json.str (declarationLabel name)),
       ("file", Json.str moduleName.toString),
       ("kind", Json.str (declarationKind ci))]
 
@@ -222,6 +226,7 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
       let some moduleName := allDeclModules.find? name | continue
       supportNodes := supportNodes.push <| Json.mkObj [
         ("id", Json.str name.toString),
+        ("label", Json.str (declarationLabel name)),
         ("file", Json.str moduleName.toString),
         ("kind", Json.str (declarationKind ci))]
 

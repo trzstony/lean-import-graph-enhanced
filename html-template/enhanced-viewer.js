@@ -162,6 +162,10 @@ function titled(node, title) {
   return node;
 }
 function shortName(name) { return name.split(".").at(-1); }
+function declarationLabel(decl) { return decl?.label || decl?.id || ""; }
+function declarationName(id) {
+  return declarationLabel(declarations.get(id) || supportDeclarations.get(id)) || id;
+}
 function folderContains(folder, path) { return path === folder || path.startsWith(folder + "."); }
 function folderColor(file) {
   for (const [path, colorIndex] of folderSelections) {
@@ -596,7 +600,7 @@ function renderSelectedConnections() {
       (highlightedDeclarations.has(edge.target) || expanded.has(target.file) ? edge.target : target.file) :
       selectedNodeForDeclaration(edge.target);
     if (!from || !to || (from === source.file && to === target.file)) continue;
-    add(from, to, true, `${edge.source} → ${edge.target}`);
+    add(from, to, true, `${declarationName(edge.source)} → ${declarationName(edge.target)}`);
   }
 
   for (const { from, to, declaration, title } of entries.values()) {
@@ -656,7 +660,7 @@ function renderEdges() {
       highlight.directions === " outgoing" ? "Outgoing dependent" :
       highlight.directions ? "Incoming and outgoing" : "Declaration use";
     titled(node, entry.examples.slice(0, 8)
-      .map(edge => `${relationship}: ${edge.source} → ${edge.target}`).join("\n"));
+      .map(edge => `${relationship}: ${declarationName(edge.source)} → ${declarationName(edge.target)}`).join("\n"));
     edgesLayer.appendChild(node);
     const sourceFile = fromDecl?.file || entry.from, targetFile = toDecl?.file || entry.to;
     visibleUsageFiles.add(JSON.stringify([sourceFile, targetFile]));
@@ -738,12 +742,13 @@ function renderFiles() {
         tabindex: "0", role: "button", "aria-label": decl.id,
         "aria-pressed": String(highlightedDeclarations.has(decl.id)),
         "aria-description": "Double click to color files containing prerequisites" });
-      if (query && decl.id.toLowerCase().includes(query)) child.classList.add("match");
+      if (query && (decl.id.toLowerCase().includes(query) ||
+          declarationLabel(decl).toLowerCase().includes(query))) child.classList.add("match");
       child.appendChild(element("circle", { cx: p.x, cy: p.y, r: 6, fill: color(decl.kind) }));
-      const short = shortName(decl.id);
+      const short = shortName(declarationLabel(decl));
       child.appendChild(element("text", { x: p.x + 10, y: p.y },
         short.length > 17 ? short.slice(0, 16) + "…" : short));
-      titled(child, `${decl.id} (${decl.kind})`);
+      titled(child, `${declarationLabel(decl)} (${decl.kind})`);
       child.addEventListener("click", event => {
         event.stopPropagation();
         if (nodeActivationSuppressed() || event.detail > 1) return;
@@ -767,7 +772,8 @@ function renderFiles() {
 function updateDetails() {
   details.replaceChildren();
   const heading = document.createElement("h2");
-  heading.textContent = selected?.id || "Explore the graph";
+  heading.textContent = selected?.type === "declaration" ?
+    declarationName(selected.id) : selected?.id || "Explore the graph";
   details.appendChild(heading);
   const summary = document.createElement("p");
   if (!selected) summary.textContent = `${modules.length} files and ${declarations.size} declarations.`;
@@ -792,7 +798,7 @@ function updateDetails() {
     const list = document.createElement("ul");
     for (const value of values) {
       const item = document.createElement("li");
-      item.textContent = value;
+      item.textContent = declarationName(value);
       list.appendChild(item);
     }
     details.appendChild(list);
@@ -1081,8 +1087,8 @@ function renderTheoremSinks() {
     const theoremCell = row.insertCell();
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = theorem.id;
-    button.title = `Show ${theorem.id}`;
+    button.textContent = declarationLabel(theorem);
+    button.title = `Show ${declarationLabel(theorem)}`;
     button.addEventListener("click", () => {
       expanded.add(theorem.file);
       setSelection("file", theorem.file, true);
@@ -1140,8 +1146,8 @@ search.addEventListener("input", () => {
   const query = search.value.trim().toLowerCase();
   if (!query) { render(); return; }
   const matchedFile = modules.find(file => file.toLowerCase().includes(query));
-  const matchedDecl = matchedFile ? null :
-    DECLARATIONS.nodes.find(decl => decl.id.toLowerCase().includes(query));
+  const matchedDecl = matchedFile ? null : DECLARATIONS.nodes.find(decl =>
+    decl.id.toLowerCase().includes(query) || declarationLabel(decl).toLowerCase().includes(query));
   if (matchedFile || matchedDecl) {
     const file = matchedFile || matchedDecl.file;
     if (matchedDecl) {
