@@ -32,4 +32,4 @@ root = "MainUnusedTransitiveImports"
 supportInterpreter = true
 
 [[lean_lib]]
-name = "ImportGraphTest"
+name = "ImportGraphPackageTest"

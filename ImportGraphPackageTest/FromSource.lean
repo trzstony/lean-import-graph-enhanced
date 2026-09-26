@@ -41,7 +41,8 @@ open Lean System
   return imports.filter (fun (n : Name) => n.getRoot ∈ [`ImportGraph, `ImportGraphPackageTest])
 
 /--
-info: #[`ImportGraphPackageTest.Unused, `ImportGraphPackageTest.Used, `ImportGraph.Imports.ImportGraph, `ImportGraph.Tools.ImportDiff]
+info: #[`ImportGraphPackageTest.Unused, `ImportGraphPackageTest.Used, `ImportGraph.Imports.ImportGraph,
+  `ImportGraph.Tools.ImportDiff]
 -/
 #guard_msgs in
 #eval do

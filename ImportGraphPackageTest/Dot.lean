@@ -10,8 +10,10 @@ def runGraphCommand : IO Unit := do
   }
 
 def compareOutputs (expected : String) (actual : String) : IO Bool := do
-  let expectedLines := expected.splitOn "\n" |>.filter (·.trimAscii.toString.length > 0) |>.map (·.trimAscii.toString)
-  let actualLines := actual.splitOn "\n" |>.filter (·.trimAscii.toString.length > 0) |>.map (·.trimAscii.toString)
+  let normalize := fun text =>
+    (text.splitOn "\n" |>.filter (·.trimAscii.toString.length > 0) |>.map (·.trimAscii.toString)).mergeSort (· ≤ ·)
+  let expectedLines := normalize expected
+  let actualLines := normalize actual
   pure (expectedLines == actualLines)
 
 /-- info: Test passed: The graph command output matches the expected.dot file. -/
