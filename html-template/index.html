@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import graph for __PROJECT_TITLE__</title>
+  <script src="vendor/graphology.min.js"></script>
+  <script src="vendor/graphology-library.min.js"></script>
+  <style>
+    :root { font: 14px/1.4 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f6f8fc; color: #18253b; }
+    header { display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+      background: #fff; border-bottom: 1px solid #dce3ed; }
+    h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+    button, input { font: inherit; }
+    button { background: white; border: 1px solid #becadd; border-radius: 7px;
+      color: #233653; padding: 6px 11px; cursor: pointer; }
+    button:hover, button:focus-visible { border-color: #346dc4; background: #eef5ff; }
+    .icon-button { display: inline-flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px; padding: 5px; flex: 0 0 34px; }
+    .icon-button svg { width: 21px; height: 21px; fill: none; stroke: currentColor;
+      stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .icon-button[aria-pressed="true"] { color: #17538f; background: #dcecff; border-color: #3471af; }
+    #search { margin-left: auto; }
+    input { border: 1px solid #becadd; border-radius: 7px; padding: 7px 10px; min-width: 200px; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; height: calc(100vh - 59px); }
+    #graph { width: 100%; height: 100%; background: radial-gradient(#e4eaf3 1px, transparent 1px) 0 0 / 24px 24px;
+      cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+    #graph.dragging { cursor: grabbing; }
+    aside { display: flex; flex-direction: column; min-height: 0; background: #fff;
+      border-left: 1px solid #dce3ed; }
+    aside h2 { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
+    aside p { color: #53617a; margin: 0 0 12px; }
+    aside ul { margin: 0; padding-left: 20px; overflow-wrap: anywhere; }
+    .directory-panel { flex: 0 0 58%; min-height: 180px; overflow: auto;
+      padding: 16px; border-bottom: 1px solid #dce3ed; }
+    .directory-heading { display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; }
+    .directory-heading button { padding: 3px 7px; font-size: 12px; }
+    .directory-help { font-size: 12px; }
+    #directory-tree { font-size: 12px; }
+    #directory-tree details { margin-left: 13px; }
+    #directory-tree > details { margin-left: 0; }
+    #directory-tree summary { list-style: none; display: flex; align-items: center; gap: 4px;
+      min-height: 26px; cursor: pointer; }
+    #directory-tree summary::-webkit-details-marker { display: none; }
+    #directory-tree summary::before { content: '▸'; color: #63728a; width: 12px; order: 1; }
+    #directory-tree details[open] > summary::before { content: '▾'; }
+    .directory-pick { order: 0; border: 0; background: transparent; width: 24px; height: 24px;
+      display: inline-flex; align-items: center; justify-content: center; padding: 0;
+      flex: 0 0 24px; cursor: pointer; }
+    .directory-name { order: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; }
+    .directory-file { display: flex; align-items: center; gap: 7px;
+      border: 0; background: transparent; text-align: left; padding: 3px 4px;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .directory-pick:hover, .directory-file:hover { background: #eef5ff; }
+    .directory-pick:disabled { opacity: .55; cursor: default; }
+    .directory-swatch { display: inline-block; width: 15px; height: 15px;
+      border-radius: 50%; border: 2px solid #9aa9bd; box-sizing: border-box; }
+    .directory-pick[aria-pressed="true"] .directory-swatch { border-color: #24344f; }
+    .directory-count { order: 3; color: #718097; white-space: nowrap; margin-left: auto; }
+    .directory-files { list-style: none; margin: 0 0 0 21px !important; padding: 0 !important; }
+    .directory-file { width: 100%; color: #53617a; }
+    .directory-file:disabled { opacity: .55; cursor: default; }
+    .directory-file-swatch { display: inline-block; width: 11px; height: 11px;
+      flex: 0 0 11px; border: 2px solid #9aa9bd; border-radius: 50%; background: #fff; }
+    #details { flex: 1; min-height: 120px; overflow: auto; padding: 16px; }
+    #import-audit[hidden] { display: none; }
+    #import-audit { flex: 0 0 35%; min-height: 150px; overflow: auto; padding: 16px;
+      border-bottom: 1px solid #dce3ed; }
+    .audit-active .directory-panel { flex-basis: 35%; }
+    #import-audit p { font-size: 12px; }
+    .audit-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+    .audit-table th, .audit-table td { width: 50%; padding: 5px 6px; border: 1px solid #dce3ed;
+      text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+    .audit-table th { background: #f4f7fb; color: #354967; }
+    .audit-table button { width: 100%; border: 0; border-radius: 3px; background: transparent;
+      text-align: left; font-size: inherit; padding: 0; overflow-wrap: anywhere; }
+    .file-circle { fill: var(--file-fill, #fff); stroke: var(--file-color, #4169a5); stroke-width: 3; }
+    .file-circle.expanded { stroke-width: 3.5; }
+    .file:hover .file-circle { stroke-width: 3.5; }
+    .file:focus, .decl:focus { outline: none; }
+    .file.selected .file-circle { stroke-width: 4; filter: drop-shadow(0 0 4px #e58728); }
+    .file.support .file-circle { stroke-width: 4.5; filter: drop-shadow(0 0 5px #ad1680); }
+    .file-label { fill: var(--file-color, #213756); font-weight: 700; font-size: 15px; text-anchor: middle; pointer-events: none; }
+    .file-count { fill: var(--file-count-color, #66758e); font-size: 11px; text-anchor: middle; pointer-events: none; }
+    #graph.cluster-mode:not(.show-labels) .file-label,
+    #graph.cluster-mode:not(.show-labels) .file-count { opacity: 0; }
+    #graph.cluster-mode:not(.show-labels) .file:hover .file-label,
+    #graph.cluster-mode:not(.show-labels) .file:hover .file-count,
+    #graph.cluster-mode:not(.show-labels) .file.selected .file-label,
+    #graph.cluster-mode:not(.show-labels) .file.selected .file-count { opacity: 1; }
+    .decl { cursor: pointer; }
+    .decl circle { stroke: white; stroke-width: 1.5; }
+    .decl text { fill: #24344f; font-size: 11px; dominant-baseline: middle; }
+    .decl:hover text, .decl.selected text { font-weight: 700; fill: #0b58b2; }
+    .decl.selected circle { stroke: #e58728; stroke-width: 3; }
+    .decl.support-root circle { stroke: #ad1680; stroke-width: 3; }
+    .file:focus-visible .file-circle, .decl:focus-visible circle {
+      stroke: #2563eb; stroke-width: 5; stroke-dasharray: 6 3; }
+    .edge { fill: none; stroke: #9aaac0; stroke-width: 1.4; opacity: 1; pointer-events: none; }
+    .edge.import { stroke-dasharray: 6 5; }
+    .edge.declaration { stroke: #4977b6; }
+    .edge.highlight { stroke: #dc6810; stroke-width: 3.2; opacity: 1; }
+    .edge.highlight.incoming { stroke: #0f766e; }
+    .edge.highlight.outgoing { stroke: #c2410c; }
+    .edge.highlight.incoming.outgoing { stroke: #7e3bb5; }
+    .edge.import.audit-candidate, #graph.show-all .edge.import.audit-candidate {
+      stroke: #bb2e50; stroke-width: 3; opacity: .92; }
+    #graph.show-all .edge { opacity: .48; stroke-width: 1.5; }
+    #graph.show-all .edge.declaration { opacity: .38; }
+    #graph.show-all .edge.highlight { opacity: 1; stroke-width: 3.2; }
+    .connection-heading { display: flex; align-items: center; gap: 7px; }
+    .connection-heading::before { content: ''; width: 18px; height: 3px; border-radius: 2px;
+      background: currentColor; }
+    .connection-heading.incoming { color: #0f766e; }
+    .connection-heading.outgoing { color: #c2410c; }
+    .match { filter: drop-shadow(0 0 6px #e5881f); }
+    @media (max-width: 760px) {
+      header { flex-wrap: wrap; gap: 8px; }
+      main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 160px; height: calc(100vh - 98px); }
+      aside { border-left: 0; border-top: 1px solid #dce3ed; }
+      .directory-panel { flex-basis: 60%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Import graph for __PROJECT_TITLE__</h1>
+    <input id="search" type="search" aria-label="Find file or declaration" placeholder="Find a file or declaration">
+    <button id="cluster-view" class="icon-button" type="button" aria-label="Show cluster graph" aria-pressed="false" title="Show cluster graph">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8.5 12 5m-5 4 3 7m4-10 4 5m-6 6 6-5"/><circle cx="6" cy="9" r="2"/><circle cx="13" cy="4" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
+    </button>
+    <button id="show-all" class="icon-button" type="button" aria-label="Show all connections" aria-pressed="false" title="Show all connections">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+    </button>
+    <button id="selection-connections" class="icon-button" type="button" aria-label="Show only connections between selected nodes" aria-pressed="false" title="Show only connections between selected nodes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6 8 5m-8 7 8-5"/><circle cx="6" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="12" r="2.5"/></svg>
+    </button>
+    <button id="import-audit-button" class="icon-button" type="button" aria-label="Show file decoupling" aria-pressed="false" title="Show file decoupling">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H6a4 4 0 0 0 0 8h3m6-8h3a4 4 0 0 1 0 8h-3M8 12h3m2 0h3"/><path d="M12 3v4m0 10v4"/></svg>
+    </button>
+    <button id="fit" type="button">Fit graph</button>
+    <button id="reset-view" class="icon-button" type="button" aria-label="Reset graph to default" title="Reset graph to default">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10.5 9-7.5 9 7.5M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></svg>
+    </button>
+  </header>
+  <main>
+    <svg id="graph" xmlns="http://www.w3.org/2000/svg" aria-label="Interactive import and declaration graph">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#879bb7"></path>
+        </marker>
+        <marker id="arrow-highlight" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#dc6810"></path>
+        </marker>
+        <marker id="arrow-incoming" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#0f766e"></path>
+        </marker>
+        <marker id="arrow-outgoing" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#c2410c"></path>
+        </marker>
+        <marker id="arrow-both" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#7e3bb5"></path>
+        </marker>
+        <marker id="arrow-audit" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 8 4 L 0 8 z" fill="#bb2e50"></path>
+        </marker>
+      </defs>
+      <g id="files"></g>
+      <g id="edges"></g>
+      <g id="decls"></g>
+    </svg>
+    <aside>
+      <section class="directory-panel" aria-label="Project directory">
+        <div class="directory-heading"><h2>Project directory</h2><button id="clear-colors" type="button">Clear colors</button></div>
+        <p class="directory-help">Click a folder name to open it. Click its circle to color its files; a parent covers its subfolders. Dim files are outside this import graph.</p>
+        <div id="directory-tree"></div>
+      </section>
+      <section id="import-audit" aria-label="File decoupling report" hidden></section>
+      <section id="details"><h2>Explore the graph</h2></section>
+    </aside>
+  </main>
+  <script>const IMPORTS_GEXF = __IMPORTS_GEXF__; const DECLARATIONS = __DECLARATIONS_JSON__;</script>
+  <script src="enhanced-viewer.js"></script>
+</body>
+</html>
