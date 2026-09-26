@@ -21,8 +21,9 @@ import auditing.
   fit the graph, reset the view, and use keyboard focus to inspect a graph
   without a mouse.
 - **Cluster and connection views.** Group related files, show every connection,
-  or restrict the display to direct edges between selected nodes. The layout
-  keeps file circles separate while revealing strongly connected regions.
+  or restrict the display to connections between every pair of selected nodes.
+  Selection order does not affect the result. The layout keeps file circles
+  separate while revealing strongly connected regions.
 - **Directory coloring and support tracing.** Color independent folders or a
   complete subtree. Selecting a declaration can highlight the files that provide
   its transitive compiled prerequisites; import-only files are not marked as

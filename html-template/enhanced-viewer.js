@@ -530,8 +530,62 @@ function fileUsagePairs() {
   cachedFileUsagePairs = pairs;
   return pairs;
 }
+function selectedNodeForDeclaration(id) {
+  const decl = declarations.get(id);
+  if (!decl) return null;
+  if (highlightedDeclarations.has(id)) return id;
+  if (highlightedFiles.has(decl.file)) return decl.file;
+  return null;
+}
+function renderSelectedConnections() {
+  const entries = new Map();
+  const add = (from, to, declaration, title) => {
+    if (from === to) return;
+    const key = JSON.stringify([declaration ? "declaration" : "file", from, to]);
+    if (!entries.has(key)) entries.set(key, { from, to, declaration, title });
+  };
+
+  // `connections` is the complete undirected file graph: it includes both
+  // import links and compiled declaration-use links. Treating it as a set of
+  // pairs makes selection order irrelevant and includes every selected pair.
+  for (const { a, b } of connections) {
+    if (highlightedFiles.has(a) && highlightedFiles.has(b)) {
+      add(a, b, false, `Connection between ${a} and ${b}`);
+    }
+  }
+
+  // When declarations are selected, preserve their directed declaration-use
+  // edges. A file-level edge above already covers the case where both visible
+  // endpoints are file nodes.
+  for (const edge of DECLARATIONS.edges) {
+    const from = selectedNodeForDeclaration(edge.source);
+    const to = selectedNodeForDeclaration(edge.target);
+    if (!from || !to || (from === declarations.get(edge.source)?.file &&
+        to === declarations.get(edge.target)?.file)) continue;
+    add(from, to, true, `${edge.source} → ${edge.target}`);
+  }
+
+  for (const { from, to, declaration, title } of entries.values()) {
+    const fromDecl = declarations.get(from), toDecl = declarations.get(to);
+    const source = fromDecl ? declPositions.get(from) : positions.get(from);
+    const target = toDecl ? declPositions.get(to) : positions.get(to);
+    if (!source || !target) continue;
+    const path = line(source, target, fromDecl ? 7 : source.radius,
+      toDecl ? 9 : target.radius + 3);
+    if (!path) continue;
+    const className = declaration ? "edge declaration highlight" : "edge import highlight";
+    const node = element("path", { d: path, class: className,
+      "marker-end": "url(#arrow-highlight)" });
+    titled(node, title);
+    edgesLayer.appendChild(node);
+  }
+}
 function renderEdges() {
   edgesLayer.replaceChildren();
+  if (selectionConnectionsOnly) {
+    renderSelectedConnections();
+    return;
+  }
   const usagePairs = showAllConnections && !expanded.size ? fileUsagePairs() : new Map();
   if (usagePairs !== cachedFileUsagePairs) {
     for (const edge of DECLARATIONS.edges) {
