@@ -13,9 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Builds the package and runs `lake test`. The Reservoir eligibility check
+      # is omitted: it always fails while the repository is private or has
+      # fewer than two stars, which is unrelated to whether the code builds.
       - uses: leanprover/lean-action@v1
-        with:
-          check-reservoir-eligibility: true
       # use setup from lean-action to perform the following steps
       - name: verify `lake exe graph` works
         run: |
