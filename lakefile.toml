@@ -37,3 +37,7 @@ name = "ImportGraphPackageTest"
 # A second fixture namespace exercises paths through filtered modules.
 [[lean_lib]]
 name = "ImportGraphPackageTestBridge"
+
+# A deliberately layered fixture used for manually testing the HTML viewer.
+[[lean_lib]]
+name = "LeanGraphFixture"

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Import graph for __PROJECT_TITLE__</title>
+  <title>Dependency Graph</title>
   <script src="vendor/graphology.min.js"></script>
   <script src="vendor/graphology-library.min.js"></script>
   <style>
@@ -24,17 +24,29 @@
     .icon-button[aria-pressed="true"] { color: #17538f; background: #dcecff; border-color: #3471af; }
     #search { margin-left: auto; }
     input { border: 1px solid #becadd; border-radius: 7px; padding: 7px 10px; min-width: 200px; }
-    main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; height: calc(100vh - 59px); }
+    main { --aside-width: 330px; display: grid;
+      grid-template-columns: minmax(220px, 1fr) 4px minmax(240px, var(--aside-width));
+      height: calc(100vh - 59px); }
     #graph { width: 100%; height: 100%; background: radial-gradient(#e4eaf3 1px, transparent 1px) 0 0 / 24px 24px;
       cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
     #graph.dragging { cursor: grabbing; }
+    #layout-splitter, .sidebar-splitter { position: relative; z-index: 2;
+      background: #9aaac0; cursor: col-resize; touch-action: none; }
+    #layout-splitter:hover, #layout-splitter:focus-visible,
+    .sidebar-splitter:hover, .sidebar-splitter:focus-visible { background: #dce9f8; outline: none; }
+    #layout-splitter:focus-visible, .sidebar-splitter:focus-visible {
+      box-shadow: inset 0 0 0 2px #3471af; }
+    body.resizing-layout, body.resizing-layout * { cursor: col-resize !important; }
     aside { display: flex; flex-direction: column; min-height: 0; background: #fff;
       border-left: 1px solid #dce3ed; }
+    aside > section { flex-shrink: 0; min-height: 0; overflow: auto; padding: 16px; }
+    .sidebar-splitter { flex: 0 0 4px; cursor: row-resize; }
+    .sidebar-splitter[hidden] { display: none; }
+    body.resizing-sidebar, body.resizing-sidebar * { cursor: row-resize !important; }
     aside h2 { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
     aside p { color: #53617a; margin: 0 0 12px; }
     aside ul { margin: 0; padding-left: 20px; overflow-wrap: anywhere; }
-    .directory-panel { flex: 0 0 58%; min-height: 180px; overflow: auto;
-      padding: 16px; border-bottom: 1px solid #dce3ed; }
+    .directory-panel { flex: 0 0 58%; }
     .directory-heading { display: flex; align-items: center; justify-content: space-between;
       gap: 8px; }
     .directory-heading button { padding: 3px 7px; font-size: 12px; }
@@ -62,19 +74,18 @@
     .directory-pick[aria-pressed="true"] .directory-swatch { border-color: #24344f; }
     .directory-count { order: 3; color: #718097; white-space: nowrap; margin-left: auto; }
     .directory-files { list-style: none; margin: 0 0 0 21px !important; padding: 0 !important; }
-    .directory-file { width: 100%; color: #53617a; }
+    .directory-files li { display: flex; align-items: center; gap: 2px; }
+    .directory-file-pick { width: 20px; height: 22px; flex-basis: 20px; }
+    .directory-file-pick[aria-pressed="true"] .directory-file-swatch { border-color: #24344f; }
+    .directory-file { flex: 1 1 auto; color: #53617a; }
     .directory-file:disabled { opacity: .55; cursor: default; }
     .directory-file-swatch { display: inline-block; width: 11px; height: 11px;
       flex: 0 0 11px; border: 2px solid #9aa9bd; border-radius: 50%; background: #fff; }
-    #details { flex: 1; min-height: 120px; overflow: auto; padding: 16px; }
+    #details { flex: 1; }
     #import-audit[hidden] { display: none; }
-    #import-audit { flex: 0 0 35%; min-height: 150px; overflow: auto; padding: 16px;
-      border-bottom: 1px solid #dce3ed; }
-    .audit-active .directory-panel { flex-basis: 35%; }
+    #import-audit { flex: 0 0 35%; }
     #theorem-sinks[hidden] { display: none; }
-    #theorem-sinks { flex: 0 0 35%; min-height: 150px; overflow: auto; padding: 16px;
-      border-bottom: 1px solid #dce3ed; }
-    .sinks-active .directory-panel { flex-basis: 35%; }
+    #theorem-sinks { flex: 0 0 35%; }
     #import-audit p { font-size: 12px; }
     #import-audit h3 { margin: 16px 0 10px; font-size: 14px; }
     .audit-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
@@ -125,15 +136,17 @@
     .match { filter: drop-shadow(0 0 6px #e5881f); }
     @media (max-width: 760px) {
       header { flex-wrap: wrap; gap: 8px; }
-      main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 160px; height: calc(100vh - 98px); }
+      main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 4px minmax(140px, 160px);
+        height: calc(100vh - 98px); }
+      #layout-splitter { cursor: row-resize; }
+      body.resizing-layout, body.resizing-layout * { cursor: row-resize !important; }
       aside { border-left: 0; border-top: 1px solid #dce3ed; }
-      .directory-panel { flex-basis: 60%; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>Import graph for __PROJECT_TITLE__</h1>
+    <h1>Dependency Graph</h1>
     <input id="search" type="search" aria-label="Find file or declaration" placeholder="Find a file or declaration">
     <button id="cluster-view" class="icon-button" type="button" aria-label="Show cluster graph" aria-pressed="false" title="Show cluster graph">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8.5 12 5m-5 4 3 7m4-10 4 5m-6 6 6-5"/><circle cx="6" cy="9" r="2"/><circle cx="13" cy="4" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="11" cy="18" r="2"/></svg>
@@ -155,7 +168,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10.5 9-7.5 9 7.5M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></svg>
     </button>
   </header>
-  <main>
+  <main id="layout">
     <svg id="graph" xmlns="http://www.w3.org/2000/svg" aria-label="Interactive import and declaration graph">
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
@@ -181,14 +194,26 @@
       <g id="edges"></g>
       <g id="decls"></g>
     </svg>
-    <aside>
+    <div id="layout-splitter" role="separator" tabindex="0" aria-label="Resize graph and details panes"
+      aria-orientation="vertical" aria-valuemin="240" aria-valuemax="900" aria-valuenow="330"
+      title="Drag to resize graph and details panes"></div>
+    <aside id="sidebar">
       <section class="directory-panel" aria-label="Project directory">
         <div class="directory-heading"><h2>Project directory</h2><button id="clear-colors" type="button">Clear colors</button></div>
-        <p class="directory-help">Click a folder name to open it. Click its circle to color its files; a parent covers its subfolders. Dim files are outside this import graph.</p>
+        <p class="directory-help">Click a folder name to open it. Click a folder&rsquo;s circle to color its files (a parent covers its subfolders), or a file&rsquo;s circle to color just that file. Dim files are outside this import graph.</p>
         <div id="directory-tree"></div>
       </section>
+      <div id="splitter-directory" class="sidebar-splitter" role="separator" tabindex="0"
+        aria-orientation="horizontal" aria-label="Resize project directory and next section"
+        title="Drag to resize sidebar sections"></div>
       <section id="import-audit" aria-label="File decoupling report" hidden></section>
+      <div id="splitter-audit" class="sidebar-splitter" role="separator" tabindex="0"
+        aria-orientation="horizontal" aria-label="Resize file decoupling and next section"
+        title="Drag to resize sidebar sections" hidden></div>
       <section id="theorem-sinks" aria-label="Theorem sinks" hidden></section>
+      <div id="splitter-sinks" class="sidebar-splitter" role="separator" tabindex="0"
+        aria-orientation="horizontal" aria-label="Resize theorem sinks and graph details"
+        title="Drag to resize sidebar sections" hidden></div>
       <section id="details"><h2>Explore the graph</h2></section>
     </aside>
   </main>

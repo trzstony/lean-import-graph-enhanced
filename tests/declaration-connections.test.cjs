@@ -12,6 +12,26 @@ test('direct edges remain available without optional support data', () => {
   const view = initialize({ nodes: [node('a'), node('b')], edges: [edge('a', 'b'), edge('a', 'b')] });
   assert.deepEqual(view.value('visibleDeclarationEdges'), [{ source: 'a', target: 'b', via: [] }]);
 });
+test('selected file pairs survive declaration and file id collisions', () => {
+  const view = initialize({
+    nodes: [node('Indexed', 'Indexed'), node('Normalize', 'Normalize')],
+    edges: [edge('Indexed', 'Normalize')]
+  });
+  view.run(`positions = new Map([['Indexed',{x:0,y:0,radius:10}],['Normalize',{x:100,y:0,radius:10}]]);
+    highlightedFiles.add('Indexed'); highlightedFiles.add('Normalize');
+    selectionConnectionsOnly = true; renderEdges();`);
+  assert.equal(view.elements.get('edges').children.length, 1);
+});
+test('expanded file edges keep their declaration identity when IDs collide', () => {
+  const view = initialize({
+    nodes: [node('Indexed', 'Indexed'), node('Normalize', 'Normalize')],
+    edges: [edge('Indexed', 'Normalize')]
+  });
+  view.run(`positions = new Map([['Indexed',{x:0,y:0,radius:10}],['Normalize',{x:100,y:0,radius:10}]]);
+    declPositions = new Map([['Indexed',{x:0,y:0}],['Normalize',{x:100,y:0}]]);
+    expanded.add('Indexed'); showAllConnections = true; renderEdges();`);
+  assert.equal(view.elements.get('edges').children.length, 1);
+});
 test('hidden chains connect visible endpoints with an ordered witness', () => {
   const view = initialize(chain());
   assert.deepEqual(view.value('visibleDeclarationEdges'),
@@ -110,4 +130,32 @@ test('file links include hidden uses but import audits still use original cross-
   // This synthetic path goes through Filtered: the inferred Base -> Consumer
   // connection must not be treated as a direct compiled use in the import audit.
   assert.deepEqual(view.value('importCandidates.map(c => [c.source,c.target])'), [['Base','Consumer']]);
+});
+test('selected-only and normal modes draw file arrows in the same, true direction', () => {
+  // Alphabetical order (Algorithms < Collections) is the reverse of the
+  // dependency direction (Collections.Indexed -> Algorithms.Normalize).
+  const prerequisite = 'Collections.Indexed', dependent = 'Algorithms.Normalize';
+  // Paths are "M x1 y1 L x2 y2"; the arrowhead sits at (x2, y2).
+  const direction = view => view.value(`edgesLayer.children.map(n => n.attributes.d)`)
+    .map(d => { const [, x1, , , x2] = d.split(' ').map(Number); return Math.sign(x2 - x1); });
+  const setup = extra => {
+    const view = initialize({
+      nodes: [node('idx', prerequisite), node('norm', dependent)],
+      edges: [edge('idx', 'norm')],
+      directImports: [{ source: prerequisite, target: dependent }]
+    });
+    view.run(`positions = new Map([['${prerequisite}',{x:0,y:0,radius:10}],['${dependent}',{x:100,y:0,radius:10}]]);
+      declPositions = new Map([['idx',{x:0,y:0}],['norm',{x:100,y:0}]]); ${extra} renderEdges();`);
+    return view;
+  };
+  const selectedOnly = setup(`highlightedFiles.add('${prerequisite}'); highlightedFiles.add('${dependent}');
+    selectionConnectionsOnly = true;`);
+  const normal = setup(`highlightedFiles.add('${dependent}');`);
+  const expanded = setup(`highlightedFiles.add('${prerequisite}'); highlightedFiles.add('${dependent}');
+    expanded.add('${prerequisite}'); expanded.add('${dependent}'); selectionConnectionsOnly = true;`);
+  for (const view of [selectedOnly, normal, expanded]) {
+    const signs = direction(view);
+    assert.ok(signs.length > 0);
+    assert.deepEqual(signs, signs.map(() => 1), 'every arrow points prerequisite -> dependent');
+  }
 });

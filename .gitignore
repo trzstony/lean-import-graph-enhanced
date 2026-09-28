@@ -2,8 +2,15 @@
 /lakefile.olean
 /lake-packages/*
 .lake/
-html-template/imports.gexf
 
 graph.pdf
 
 **/.DS_Store
+
+# Generated viewer output and reports (`lake exe graph ... out.html`)
+/*.html
+/*-file-decoupling.md
+ImportGraphPackageTest/*.html
+
+# Local scratch
+/_to_delete/

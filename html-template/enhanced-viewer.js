@@ -6,8 +6,11 @@ const filesLayer = document.getElementById("files");
 const declsLayer = document.getElementById("decls");
 const details = document.getElementById("details");
 const importAudit = document.getElementById("import-audit");
+const sidebar = document.getElementById("sidebar");
 const directoryTree = document.getElementById("directory-tree");
 const search = document.getElementById("search");
+const layoutElement = document.getElementById("layout");
+const layoutSplitter = document.getElementById("layout-splitter");
 const imports = graphologyLibrary.gexf.parse(graphology.Graph, IMPORTS_GEXF);
 const modules = imports.nodes().sort();
 const sourceFiles = [...new Set([...modules, ...(DECLARATIONS.files || [])])].sort();
@@ -67,12 +70,15 @@ for (const edge of visibleDeclarationEdges) {
   visibleIncomingEdges.get(edge.target).push(edge);
   visibleOutgoingEdges.get(edge.source).push(edge);
 }
+// File-level links are directed like every other edge in the viewer:
+// source = prerequisite (imported / used), target = dependent (importer / user).
+// Anything that draws an arrow must read from `fileLinks`; the undirected
+// `connections` below exist only for layout and clustering.
 const fileLinks = new Map();
 function addFileLink(source, target, uses = 0) {
   if (source === target || !byFile.has(source) || !byFile.has(target)) return;
-  const [a, b] = source < target ? [source, target] : [target, source];
-  const key = JSON.stringify([a, b]);
-  if (!fileLinks.has(key)) fileLinks.set(key, { a, b, imports: 0, uses: 0 });
+  const key = JSON.stringify([source, target]);
+  if (!fileLinks.has(key)) fileLinks.set(key, { source, target, imports: 0, uses: 0 });
   fileLinks.get(key)[uses ? "uses" : "imports"]++;
 }
 imports.forEachEdge((_id, _attrs, source, target) => addFileLink(source, target));
@@ -80,7 +86,16 @@ for (const { source, target } of directImports) addFileLink(source, target);
 for (const edge of visibleDeclarationEdges) {
   addFileLink(declarations.get(edge.source)?.file, declarations.get(edge.target)?.file, 1);
 }
-const connections = [...fileLinks.values()].map(link => ({ ...link,
+// Undirected view for layout: merge both directions of a pair into one link.
+const undirectedLinks = new Map();
+for (const { source, target, imports: importCount, uses } of fileLinks.values()) {
+  const [a, b] = source < target ? [source, target] : [target, source];
+  const key = JSON.stringify([a, b]);
+  if (!undirectedLinks.has(key)) undirectedLinks.set(key, { a, b, imports: 0, uses: 0 });
+  undirectedLinks.get(key).imports += importCount;
+  undirectedLinks.get(key).uses += uses;
+}
+const connections = [...undirectedLinks.values()].map(link => ({ ...link,
   weight: Math.min(3, 1 + Math.log1p(link.uses) / 2) }));
 const neighbors = new Map(modules.map(file => [file, new Set()]));
 const weightedNeighbors = new Map(modules.map(file => [file, new Map()]));
@@ -101,7 +116,11 @@ const folderPalette = [
   { stroke: "#606d12", fill: "#c7d073" }
 ];
 const supportColor = { stroke: "#ad1680", fill: "#f092d0" };
+// User-chosen colors, as palette indexes. Folders and files are kept in separate
+// maps because a file and a folder can share a module path (e.g. `Foo.lean` and
+// `Foo/`). Precedence: support highlight > the file's own color > its folder's.
 const folderSelections = new Map();
+const fileSelections = new Map();
 const openFolders = new Set();
 const folderRoots = new Map();
 function makeFolder(name, path) { return { name, path, directories: new Map(), files: [], count: 0 }; }
@@ -205,7 +224,9 @@ function rebuildSupportFiles() {
   }
 }
 function fileColor(file) {
-  return supportFiles.has(file) ? supportColor : folderColor(file);
+  if (supportFiles.has(file)) return supportColor;
+  if (fileSelections.has(file)) return folderPalette[fileSelections.get(file)];
+  return folderColor(file);
 }
 let cachedFileUsagePairs = null;
 
@@ -229,6 +250,12 @@ function declarationConnectionTitle(edge) {
   return edge.via.length ?
     `${endpoints} (via ${edge.via.map(declarationName).join(" → ")})` : endpoints;
 }
+// File and declaration nodes have separate identities even when their string
+// IDs happen to match (for example, an inductive named `...Indexed` in
+// `...Indexed.lean`). Keep the kind alongside every rendered endpoint.
+const fileRef = id => ({ id, kind: "file" });
+const declarationRef = id => ({ id, kind: "declaration" });
+const endpointKey = endpoint => `${endpoint.kind}:${endpoint.id}`;
 function folderContains(folder, path) { return path === folder || path.startsWith(folder + "."); }
 function folderColor(file) {
   for (const [path, colorIndex] of folderSelections) {
@@ -236,20 +263,35 @@ function folderColor(file) {
   }
   return null;
 }
+// Prefer a palette color no folder or file is using yet.
+function nextColorIndex() {
+  const used = new Set([...folderSelections.values(), ...fileSelections.values()]);
+  const index = folderPalette.findIndex((_color, i) => !used.has(i));
+  return index < 0 ? used.size % folderPalette.length : index;
+}
 function selectFolder(path) {
   if (folderSelections.has(path)) {
     folderSelections.delete(path);
   } else {
-    // A parent selection colors its complete subtree; a child selection replaces it.
+    // A parent selection colors its complete subtree (clearing any colors
+    // inside it); a child folder selection replaces its parent's.
     for (const selectedPath of [...folderSelections.keys()]) {
       if (folderContains(path, selectedPath) || folderContains(selectedPath, path)) {
         folderSelections.delete(selectedPath);
       }
     }
-    const used = new Set(folderSelections.values());
-    const colorIndex = folderPalette.findIndex((_color, index) => !used.has(index));
-    folderSelections.set(path, colorIndex < 0 ? folderSelections.size % folderPalette.length : colorIndex);
+    for (const file of [...fileSelections.keys()]) {
+      if (folderContains(path, file)) fileSelections.delete(file);
+    }
+    folderSelections.set(path, nextColorIndex());
   }
+  renderDirectoryTree();
+  renderFiles();
+}
+// A file's own color overrides its folder's; clearing it falls back to the folder.
+function selectFileColor(file) {
+  if (fileSelections.has(file)) fileSelections.delete(file);
+  else fileSelections.set(file, nextColorIndex());
   renderDirectoryTree();
   renderFiles();
 }
@@ -307,8 +349,18 @@ function renderDirectoryTree() {
           `Show connections for ${file}${supportFiles.has(file) ? "; supports a selected declaration" : ""}` :
           `File ${file} outside import graph`);
         const chosenColor = fileColor(file);
+        const ownColor = fileSelections.has(file);
+        // The circle is its own button (buttons cannot nest): it colors this
+        // file, while the name button selects the file in the graph.
+        const pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "directory-pick directory-file-pick";
+        pick.disabled = !inGraph;
+        pick.setAttribute("aria-label", `${ownColor ? "Remove color from" : "Color"} file ${file}`);
+        pick.setAttribute("aria-pressed", String(ownColor));
         const fileSwatch = document.createElement("span");
         fileSwatch.className = "directory-file-swatch";
+        pick.append(fileSwatch);
         if (chosenColor) {
           fileSwatch.style.backgroundColor = chosenColor.stroke;
           fileSwatch.style.borderColor = chosenColor.stroke;
@@ -319,8 +371,8 @@ function renderDirectoryTree() {
           button.classList.add("support");
           button.title = `${file} — supports a selected declaration`;
         }
-        button.prepend(fileSwatch);
         if (inGraph) {
+          pick.addEventListener("click", () => selectFileColor(file));
           button.addEventListener("click", event => {
             if (event.detail > 1) return;
             deferNodeClick(`file:${file}`, () => selectFile(file, true));
@@ -330,7 +382,7 @@ function renderDirectoryTree() {
             toggle(file);
           });
         }
-        item.appendChild(button);
+        item.append(pick, button);
         list.appendChild(item);
       }
       detailsNode.appendChild(list);
@@ -618,38 +670,29 @@ function fileUsagePairs() {
 function selectedNodeForDeclaration(id) {
   const decl = declarations.get(id);
   if (!decl) return null;
-  if (highlightedDeclarations.has(id)) return id;
-  if (highlightedFiles.has(decl.file)) return decl.file;
+  if (highlightedDeclarations.has(id)) return declarationRef(id);
+  if (highlightedFiles.has(decl.file)) return fileRef(decl.file);
   return null;
 }
 function renderSelectedConnections() {
   const entries = new Map();
-  const pairKey = (left, right) => JSON.stringify(left < right ? [left, right] : [right, left]);
   const add = (from, to, declaration, title) => {
-    if (from === to) return;
-    const key = JSON.stringify([declaration ? "declaration" : "file", from, to]);
+    if (from.id === to.id && from.kind === to.kind) return;
+    const key = JSON.stringify([declaration ? "declaration" : "file",
+      endpointKey(from), endpointKey(to)]);
     if (!entries.has(key)) entries.set(key, { from, to, declaration, title });
   };
 
-  // `connections` is the complete undirected file graph: it includes both
-  // import links and compiled declaration-use links. Treating it as a set of
-  // pairs makes selection order irrelevant and includes every selected pair.
-  const selectedDeclarationPairs = new Set();
-  for (const edge of visibleDeclarationEdges) {
-    const sourceFile = declarations.get(edge.source)?.file;
-    const targetFile = declarations.get(edge.target)?.file;
-    if (sourceFile && targetFile && sourceFile !== targetFile &&
-        highlightedFiles.has(sourceFile) && highlightedFiles.has(targetFile)) {
-      selectedDeclarationPairs.add(pairKey(sourceFile, targetFile));
-    }
-  }
-  for (const { a, b } of connections) {
-    if (highlightedFiles.has(a) && highlightedFiles.has(b)) {
-      const expandedPair = expanded.has(a) || expanded.has(b);
-      if (!expandedPair || !selectedDeclarationPairs.has(pairKey(a, b))) {
-        add(a, b, false, `Connection between ${a} and ${b}`);
-      }
-    }
+  // `fileLinks` is the complete directed file graph: import links plus
+  // compiled declaration-use links, each pointing prerequisite -> dependent.
+  // Selection order is irrelevant; every selected pair is included in its
+  // true direction. When an endpoint is expanded, a file link backed by
+  // declaration uses is replaced by those declaration-level arrows below.
+  for (const { source, target, imports: importCount, uses } of fileLinks.values()) {
+    if (!highlightedFiles.has(source) || !highlightedFiles.has(target)) continue;
+    if (uses && (expanded.has(source) || expanded.has(target))) continue;
+    add(fileRef(source), fileRef(target), false, importCount ?
+      `${source} is imported by ${target}` : `${target} uses declarations from ${source}`);
   }
 
   // Expanded selected files expose every directed declaration-use edge between
@@ -660,19 +703,22 @@ function renderSelectedConnections() {
     if (!source || !target) continue;
     const filesSelected = highlightedFiles.has(source.file) && highlightedFiles.has(target.file);
     const from = filesSelected ?
-      (highlightedDeclarations.has(edge.source) || expanded.has(source.file) ? edge.source : source.file) :
+      (highlightedDeclarations.has(edge.source) || expanded.has(source.file) ? declarationRef(edge.source) : fileRef(source.file)) :
       selectedNodeForDeclaration(edge.source);
     const to = filesSelected ?
-      (highlightedDeclarations.has(edge.target) || expanded.has(target.file) ? edge.target : target.file) :
+      (highlightedDeclarations.has(edge.target) || expanded.has(target.file) ? declarationRef(edge.target) : fileRef(target.file)) :
       selectedNodeForDeclaration(edge.target);
-    if (!from || !to || (from === source.file && to === target.file)) continue;
+    if (!from || !to ||
+        (from.kind === "file" && to.kind === "file" &&
+          from.id === source.file && to.id === target.file)) continue;
     add(from, to, true, declarationConnectionTitle(edge));
   }
 
   for (const { from, to, declaration, title } of entries.values()) {
-    const fromDecl = declarations.get(from), toDecl = declarations.get(to);
-    const source = fromDecl ? declPositions.get(from) : positions.get(from);
-    const target = toDecl ? declPositions.get(to) : positions.get(to);
+    const fromDecl = from.kind === "declaration" ? declarations.get(from.id) : null;
+    const toDecl = to.kind === "declaration" ? declarations.get(to.id) : null;
+    const source = fromDecl ? declPositions.get(from.id) : positions.get(from.id);
+    const target = toDecl ? declPositions.get(to.id) : positions.get(to.id);
     if (!source || !target) continue;
     const path = line(source, target, fromDecl ? 7 : source.radius,
       toDecl ? 9 : target.radius + 3);
@@ -699,28 +745,27 @@ function renderEdges() {
       if (!source || !target) continue;
       if (!revealExpandedConnections) continue;
       if (!showAllConnections && !expanded.has(source.file) && !expanded.has(target.file)) continue;
-      const from = expanded.has(source.file) ? edge.source : source.file;
-      const to = expanded.has(target.file) ? edge.target : target.file;
-      if (from === to) continue;
-      const key = JSON.stringify([from, to]);
-      if (!usagePairs.has(key)) usagePairs.set(key, { from, to, examples: [] });
+      const fromKind = expanded.has(source.file) ? "declaration" : "file";
+      const toKind = expanded.has(target.file) ? "declaration" : "file";
+      const from = fromKind === "declaration" ? edge.source : source.file;
+      const to = toKind === "declaration" ? edge.target : target.file;
+      if (from === to && fromKind === toKind) continue;
+      const key = JSON.stringify([fromKind, from, toKind, to]);
+      if (!usagePairs.has(key)) usagePairs.set(key, { from, to, fromKind, toKind, examples: [] });
       usagePairs.get(key).examples.push(edge);
     }
   }
   const visibleUsageFiles = new Set();
   for (const entry of usagePairs.values()) {
-    const fromDecl = declarations.get(entry.from), toDecl = declarations.get(entry.to);
-    if (selectionConnectionsOnly &&
-        !(fromDecl ? highlightedDeclarations : highlightedFiles).has(entry.from)) continue;
-    if (selectionConnectionsOnly &&
-        !(toDecl ? highlightedDeclarations : highlightedFiles).has(entry.to)) continue;
+    const fromDecl = entry.fromKind === "declaration" ? declarations.get(entry.from) : null;
+    const toDecl = entry.toKind === "declaration" ? declarations.get(entry.to) : null;
     const from = fromDecl ? declPositions.get(entry.from) : positions.get(entry.from);
     const to = toDecl ? declPositions.get(entry.to) : positions.get(entry.to);
     if (!from || !to) continue;
     const path = line(from, to, fromDecl ? 7 : from.radius, toDecl ? 9 : to.radius + 3);
     if (!path) continue;
     const highlight = declarationEdgeHighlight(entry.examples);
-    if (!showAllConnections && !highlight.highlighted && !selectionConnectionsOnly) continue;
+    if (!showAllConnections && !highlight.highlighted) continue;
     const stateClass = highlight.highlighted ? ` highlight${highlight.directions}` : "";
     const node = element("path", { d: path, class: "edge declaration" + stateClass,
       "marker-end": highlight.highlighted ? highlight.marker :
@@ -744,13 +789,11 @@ function renderEdges() {
     for (const edge of importCandidates) importEdges.set(edge.key, edge);
   }
   for (const { source, target } of importEdges.values()) {
-    if (selectionConnectionsOnly &&
-        (!highlightedFiles.has(source) || !highlightedFiles.has(target))) continue;
     if (visibleUsageFiles.has(JSON.stringify([source, target]))) continue;
     const from = positions.get(source), to = positions.get(target);
-    if (!from || !to) return;
+    if (!from || !to) continue;
     const path = line(from, to, from.radius + 2, to.radius + 5);
-    if (!path) return;
+    if (!path) continue;
     const highlighted = highlightedFiles.has(source) || highlightedFiles.has(target);
     const candidate = auditMode && candidateKeys.has(JSON.stringify([source, target]));
     if (!showAllConnections && !highlighted && !candidate) continue;
@@ -1132,6 +1175,94 @@ function renderImportAudit() {
 const sinksPanel = document.getElementById("theorem-sinks");
 const sinksButton = document.getElementById("theorem-sinks-button");
 let sinksMode = false;
+const sidebarSplitters = [
+  document.getElementById("splitter-directory"),
+  document.getElementById("splitter-audit"),
+  document.getElementById("splitter-sinks")
+];
+let sidebarPanels = [];
+let sidebarFractions = [];
+const sidebarSplitterHeight = 4;
+function sidebarAvailableHeight() {
+  return Math.max(1, sidebar.clientHeight - sidebarSplitterHeight * (sidebarPanels.length - 1));
+}
+function applySidebarFractions() {
+  const gaps = sidebarSplitterHeight * (sidebarPanels.length - 1);
+  sidebarPanels.forEach((panel, index) => {
+    const share = sidebarFractions[index];
+    panel.style.flex = `0 0 calc(${share * 100}% - ${share * gaps}px)`;
+  });
+  const available = sidebarAvailableHeight();
+  sidebarPanels.slice(0, -1).forEach((panel, index) => {
+    const splitter = panel.nextElementSibling;
+    const pair = sidebarFractions[index] + sidebarFractions[index + 1];
+    const min = Math.min(60 / available, pair / 3);
+    splitter.setAttribute("aria-valuemin", String(Math.round(min * available)));
+    splitter.setAttribute("aria-valuemax", String(Math.round((pair - min) * available)));
+    splitter.setAttribute("aria-valuenow", String(Math.round(sidebarFractions[index] * available)));
+    splitter.setAttribute("aria-valuetext", `${panel.getAttribute("aria-label")} ${Math.round(sidebarFractions[index] * available)} pixels high`);
+  });
+}
+function updateSidebarLayout() {
+  sidebarPanels = [document.querySelector(".directory-panel")];
+  if (auditMode) sidebarPanels.push(importAudit);
+  if (sinksMode) sidebarPanels.push(sinksPanel);
+  sidebarPanels.push(details);
+  sidebarSplitters[0].hidden = false;
+  sidebarSplitters[1].hidden = !auditMode;
+  sidebarSplitters[2].hidden = !sinksMode;
+  sidebarFractions = sidebarPanels.length === 2 ? [0.58, 0.42] :
+    sidebarPanels.length === 3 ? [0.35, 0.35, 0.30] : [0.28, 0.24, 0.24, 0.24];
+  applySidebarFractions();
+}
+function setSidebarPair(index, first, initial = sidebarFractions) {
+  const pair = initial[index] + initial[index + 1];
+  const min = Math.min(60 / sidebarAvailableHeight(), pair / 3);
+  const clamped = Math.max(min, Math.min(pair - min, first));
+  sidebarFractions = [...initial];
+  sidebarFractions[index] = clamped;
+  sidebarFractions[index + 1] = pair - clamped;
+  applySidebarFractions();
+}
+let sidebarDrag = null;
+for (const splitter of sidebarSplitters) {
+  splitter.addEventListener("pointerdown", event => {
+    if (!event.isPrimary || event.button !== 0) return;
+    const index = sidebarPanels.findIndex(panel => panel.nextElementSibling === splitter);
+    if (index < 0) return;
+    sidebarDrag = { pointerId: event.pointerId, index, y: event.clientY,
+      fractions: [...sidebarFractions] };
+    splitter.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing-sidebar");
+    event.preventDefault();
+  });
+  splitter.addEventListener("pointermove", event => {
+    if (!sidebarDrag || event.pointerId !== sidebarDrag.pointerId) return;
+    const { index, y, fractions } = sidebarDrag;
+    setSidebarPair(index, fractions[index] + (event.clientY - y) / sidebarAvailableHeight(), fractions);
+  });
+  const finish = event => {
+    if (!sidebarDrag || event.pointerId !== sidebarDrag.pointerId) return;
+    sidebarDrag = null;
+    document.body.classList.remove("resizing-sidebar");
+  };
+  splitter.addEventListener("pointerup", finish);
+  splitter.addEventListener("pointercancel", finish);
+  splitter.addEventListener("lostpointercapture", finish);
+  splitter.addEventListener("keydown", event => {
+    const index = sidebarPanels.findIndex(panel => panel.nextElementSibling === splitter);
+    if (index < 0) return;
+    const step = (event.shiftKey ? 50 : 10) / sidebarAvailableHeight();
+    let first = sidebarFractions[index];
+    if (event.key === "ArrowUp") first -= step;
+    else if (event.key === "ArrowDown") first += step;
+    else if (event.key === "Home") first = 0;
+    else if (event.key === "End") first = 1;
+    else return;
+    event.preventDefault();
+    setSidebarPair(index, first);
+  });
+}
 function updateSinksButton() {
   sinksButton.setAttribute("aria-pressed", String(sinksMode));
   sinksButton.title = sinksMode ? "Hide theorem sinks" : "Show theorem sinks";
@@ -1179,18 +1310,22 @@ function renderTheoremSinks() {
 auditButton.addEventListener("click", () => {
   auditMode = !auditMode;
   updateAuditButton();
+  updateSidebarLayout();
   renderEdges();
 });
 sinksButton.addEventListener("click", () => {
   sinksMode = !sinksMode;
   updateSinksButton();
+  updateSidebarLayout();
 });
 renderImportAudit();
 updateAuditButton();
 renderTheoremSinks();
 updateSinksButton();
+updateSidebarLayout();
 document.getElementById("clear-colors").addEventListener("click", () => {
   folderSelections.clear();
+  fileSelections.clear();
   for (const id of [...supportRoots]) setSelection("declaration", id, false);
   supportRoots.clear();
   rebuildSupportFiles();
@@ -1202,6 +1337,7 @@ document.getElementById("reset-view").addEventListener("click", () => {
   supportRoots.clear(); rebuildSupportFiles();
   selected = null;
   folderSelections.clear();
+  fileSelections.clear();
   openFolders.clear();
   for (const folder of defaultOpenFolders) openFolders.add(folder);
   search.value = "";
@@ -1215,6 +1351,7 @@ document.getElementById("reset-view").addEventListener("click", () => {
   updateAuditButton();
   sinksMode = false;
   updateSinksButton();
+  updateSidebarLayout();
   renderDirectoryTree(); layout(); render(); focus();
 });
 search.addEventListener("input", () => {
@@ -1236,5 +1373,93 @@ search.addEventListener("input", () => {
   }
 });
 window.addEventListener("resize", () => { if (clusterMode) fit(); else focus(); });
+
+// Resize the graph and details panes without interfering with graph panning.
+// The same separator becomes horizontal on narrow screens.
+let layoutDrag = null;
+const layoutDragThreshold = 2;
+function narrowLayout() {
+  return window.matchMedia("(max-width: 760px)").matches;
+}
+function layoutSizeLimits(horizontal) {
+  const rect = layoutElement.getBoundingClientRect();
+  if (horizontal) {
+    return { min: 140, max: Math.max(140, rect.height - 120), available: rect.height };
+  }
+  return { min: 240, max: Math.max(240, Math.min(rect.width * 0.65, rect.width - 220)), available: rect.width };
+}
+function clampLayoutSize(value, horizontal) {
+  const limits = layoutSizeLimits(horizontal);
+  return Math.round(Math.max(limits.min, Math.min(limits.max, value)));
+}
+function setLayoutSize(value, horizontal = narrowLayout()) {
+  const size = clampLayoutSize(value, horizontal);
+  if (horizontal) {
+    layoutElement.style.removeProperty("--aside-width");
+    layoutElement.style.gridTemplateRows = `minmax(0, 1fr) 4px ${size}px`;
+    layoutSplitter.setAttribute("aria-orientation", "horizontal");
+    layoutSplitter.setAttribute("aria-valuemin", "140");
+    layoutSplitter.setAttribute("aria-valuemax", String(layoutSizeLimits(true).max));
+  } else {
+    layoutElement.style.removeProperty("grid-template-rows");
+    layoutElement.style.setProperty("--aside-width", `${size}px`);
+    layoutSplitter.setAttribute("aria-orientation", "vertical");
+    layoutSplitter.setAttribute("aria-valuemin", "240");
+    layoutSplitter.setAttribute("aria-valuemax", String(layoutSizeLimits(false).max));
+  }
+  layoutSplitter.setAttribute("aria-valuenow", String(size));
+  layoutSplitter.setAttribute("aria-valuetext", horizontal ?
+    `Details pane ${size} pixels high` : `Details pane ${size} pixels wide`);
+  if (view) applyView();
+}
+function layoutPointerSize(event, horizontal) {
+  const rect = layoutElement.getBoundingClientRect();
+  return horizontal ? rect.bottom - event.clientY : rect.right - event.clientX;
+}
+layoutSplitter.addEventListener("pointerdown", event => {
+  if (!event.isPrimary || event.button !== 0) return;
+  const horizontal = narrowLayout();
+  layoutDrag = { pointerId: event.pointerId, horizontal,
+    start: layoutPointerSize(event, horizontal), moved: false };
+  layoutSplitter.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing-layout");
+  event.preventDefault();
+});
+layoutSplitter.addEventListener("pointermove", event => {
+  if (!layoutDrag || event.pointerId !== layoutDrag.pointerId) return;
+  const size = layoutPointerSize(event, layoutDrag.horizontal);
+  if (!layoutDrag.moved && Math.abs(size - layoutDrag.start) < layoutDragThreshold) return;
+  layoutDrag.moved = true;
+  setLayoutSize(size, layoutDrag.horizontal);
+});
+function finishLayoutDrag(event) {
+  if (!layoutDrag || event.pointerId !== layoutDrag.pointerId) return;
+  layoutDrag = null;
+  document.body.classList.remove("resizing-layout");
+}
+layoutSplitter.addEventListener("pointerup", finishLayoutDrag);
+layoutSplitter.addEventListener("pointercancel", finishLayoutDrag);
+layoutSplitter.addEventListener("lostpointercapture", finishLayoutDrag);
+layoutSplitter.addEventListener("keydown", event => {
+  const horizontal = narrowLayout();
+  const current = Number(layoutSplitter.getAttribute("aria-valuenow")) || (horizontal ? 160 : 330);
+  const step = event.shiftKey ? 50 : 10;
+  let next = current;
+  if ((!horizontal && event.key === "ArrowLeft") || (horizontal && event.key === "ArrowUp")) next -= step;
+  if ((!horizontal && event.key === "ArrowRight") || (horizontal && event.key === "ArrowDown")) next += step;
+  if (event.key === "Home") next = layoutSizeLimits(horizontal).min;
+  if (event.key === "End") next = layoutSizeLimits(horizontal).max;
+  if (next === current) return;
+  event.preventDefault();
+  setLayoutSize(next, horizontal);
+});
+window.addEventListener("resize", () => {
+  if (layoutDrag) return;
+  const horizontal = narrowLayout();
+  setLayoutSize(Number(layoutSplitter.getAttribute("aria-valuenow")) || (horizontal ? 160 : 330), horizontal);
+  applySidebarFractions();
+});
+const initialNarrowLayout = narrowLayout();
+setLayoutSize(initialNarrowLayout ? 160 : 330, initialNarrowLayout);
 updateSelectionConnectionsButton();
 renderDirectoryTree(); layout(); render(); focus();

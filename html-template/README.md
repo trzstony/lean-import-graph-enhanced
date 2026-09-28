@@ -1,33 +1,40 @@
-# Visualised import graph
+# HTML viewer template
 
-## Instructions
+These files are the template for the standalone viewer that
+`lake exe graph ... output.html` produces. They are not meant to be opened
+directly: the exporter builds one self-contained HTML file from them.
 
-To test this, place a file `imports.gexf` inside this directory. You can create such a file with
+## How the export works
 
+`MainGraph.lean` reads `index.html` and then:
+
+1. replaces each `<script src="...">` tag for `vendor/graphology.min.js`,
+   `vendor/graphology-library.min.js`, and `enhanced-viewer.js` with the
+   script's contents, and
+2. replaces the `__IMPORTS_GEXF__` and `__DECLARATIONS_JSON__` placeholders with
+   the file import graph and the declaration graph.
+
+The result needs no web server or internet connection. Because this is plain
+text search-and-replace, **any change to those script tags or placeholders must
+be mirrored in `MainGraph.lean`.**
+
+## Trying changes
+
+Rebuild a viewer from the demo project and open it in a browser:
+
+```bash
+lake build LeanGraphFixture LeanGraphFixture.Loose
+lake exe graph --to LeanGraphFixture LeanGraphFixture.html
 ```
-lake exe graph html-template/imports.gexf
+
+The viewer's graph logic has Node tests that run `enhanced-viewer.js` directly:
+
+```bash
+node --test tests/declaration-connections.test.cjs
 ```
 
-Then start a local server with
+## Credits
 
-```
-cd html-template
-python -m http.server 8000
-```
-
-And open http://localhost:8000
-
-## Development
-
-Currently `lake exe graph output.html` will use the files here to create a stand-alone
-HTML file. It does so by search-replacing the JS-scripts, the `fetch('imports.gexf')`
-statement, and the `<h1>` header.
-
-Therefore any modifications to these lines need to be reflected in `ImportGraph/Cli.lean`!
-
-# Credits
-
-This tool has been adapted from its [Lean 3 version](https://github.com/eric-wieser/mathlib-import-graph) written by Eric Wieser, which was published under the [MIT License](./LICENSE_source)
-included here.
-
-Adaptation by Jon Eugster.
+Adapted from the [Lean 3 version](https://github.com/eric-wieser/mathlib-import-graph)
+by Eric Wieser, published under the [MIT License](./LICENSE_source) included
+here. Adaptation by Jon Eugster.

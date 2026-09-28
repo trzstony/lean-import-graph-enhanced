@@ -517,11 +517,9 @@ def importGraphCLI (args : Cli.Parsed) : IO UInt32 := do
           let depContent ← IO.FS.readFile <| ← IO.FS.realPath (templateRoot / dep)
           html := html.replace s!"<script src=\"{dep}\"></script>" s!"<script>{depContent}</script>"
         -- Inline the import and declaration graphs so the HTML works offline.
-        let toFormatted : String := ", ".intercalate <| (to.map toString).toList
         html := html
           |>.replace "__IMPORTS_GEXF__" ((Json.str gexfFile).compress.replace "<" "\\u003c")
           |>.replace "__DECLARATIONS_JSON__" ((outFiles["decls"]!).replace "<" "\\u003c")
-          |>.replace "__PROJECT_TITLE__" toFormatted
         IO.FS.writeFile fp html
      | some ext => try
         _ ← IO.Process.output { cmd := "dot", args := #["-T" ++ ext, "-o", o] } outFiles["dot"]!
