@@ -23,7 +23,7 @@ connections between selected nodes, file-decoupling audit, theorem sinks,
 
 ### Select a file with a single click
 
-[![Single click selects a file and highlights its connections](videos/single-click.webp)](videos/single-click.mp4)
+<a href="videos/single-click.mp4"><img src="videos/single-click.webp" width="640" alt="Single click selects a file and highlights its connections"></a>
 
 Clicking a file circle selects it. Its imports and the files that depend on it
 are drawn as highlighted arrows, and the details pane shows the file name and
@@ -32,7 +32,7 @@ Arrows always point from the prerequisite to the file that depends on it.
 
 ### Expand a file into its declarations with a double click
 
-[![Double click expands a file into its declarations](videos/double-click.webp)](videos/double-click.mp4)
+<a href="videos/double-click.mp4"><img src="videos/double-click.webp" width="640" alt="Double click expands a file into its declarations"></a>
 
 Double-clicking a file opens it into a larger circle listing its definitions,
 theorems, private lemmas, structures, and other declarations, colored by kind.
@@ -42,7 +42,7 @@ what **uses it**, and the details pane lists both.
 
 ### Show all connections
 
-[![Show all connections reveals the full graph](videos/show-all-connections.webp)](videos/show-all-connections.mp4)
+<a href="videos/show-all-connections.mp4"><img src="videos/show-all-connections.webp" width="640" alt="Show all connections reveals the full graph"></a>
 
 The eye button toggles every import and declaration-use connection at once, for
 a quick view of the whole project's shape. With it off, only the connections of
@@ -50,7 +50,7 @@ the current selection are drawn, which keeps large graphs readable.
 
 ### Connections between selected nodes vs. normal connections
 
-[![Toggle between connections among the selection and all of their connections](videos/show-normal-connections.webp)](videos/show-normal-connections.mp4)
+<a href="videos/show-normal-connections.mp4"><img src="videos/show-normal-connections.webp" width="640" alt="Toggle between connections among the selection and all of their connections"></a>
 
 With the "connections between selected nodes" button on, selecting several files
 (here `Indexed`, `Normalize`, and `Order`) shows **only** the arrows among them,
@@ -62,7 +62,7 @@ connections.
 
 ### Fit the graph and switch to the cluster layout
 
-[![Fit graph and cluster layout](videos/fit-graph.webp)](videos/fit-graph.mp4)
+<a href="videos/fit-graph.mp4"><img src="videos/fit-graph.webp" width="640" alt="Fit graph and cluster layout"></a>
 
 Drag to pan around the graph. After zooming or panning away, **Fit graph**
 brings every file back into view. The cluster button switches from the default
@@ -71,7 +71,7 @@ that groups strongly connected files together while keeping circles apart.
 
 ### Color folders and individual files
 
-[![Coloring folders and files from the project directory](videos/color-files.webp)](videos/color-files.mp4)
+<a href="videos/color-files.mp4"><img src="videos/color-files.webp" width="640" alt="Coloring folders and files from the project directory"></a>
 
 The project directory in the sidebar mirrors your source tree. Click the circle
 next to a **file** to color just that file, or next to a **folder** to color
@@ -81,7 +81,7 @@ color picks an unused palette entry, and the graph nodes change color to match.
 
 ### Audit imports with file decoupling
 
-[![File-decoupling audit lists direct imports with no declaration use](videos/file-decoupling.webp)](videos/file-decoupling.mp4)
+<a href="videos/file-decoupling.mp4"><img src="videos/file-decoupling.webp" width="640" alt="File-decoupling audit lists direct imports with no declaration use"></a>
 
 The link button opens the file-decoupling panel. It lists direct imports where
 the importing file uses no declaration from the imported one in the compiled
@@ -92,7 +92,7 @@ written to Markdown from the command line with `--file-decoupling report.md`.
 
 ### Find theorem sinks
 
-[![Theorem sinks lists theorems nothing else uses](videos/theorem-sink.webp)](videos/theorem-sink.mp4)
+<a href="videos/theorem-sink.mp4"><img src="videos/theorem-sink.webp" width="640" alt="Theorem sinks lists theorems nothing else uses"></a>
 
 The funnel button lists **theorem sinks**: source theorems that no other visible
 declaration uses, directly or through hidden helpers and filtered files. These
@@ -122,7 +122,7 @@ files, before exporting a graph.
 
 ### Reset to the default view
 
-[![The reset button returns the viewer to its default state](videos/back-to-default.webp)](videos/back-to-default.mp4)
+<a href="videos/back-to-default.mp4"><img src="videos/back-to-default.webp" width="640" alt="The reset button returns the viewer to its default state"></a>
 
 The home button undoes everything in one step: it clears selections, expanded
 files, colors, open panels, and connection modes, and returns to the default
