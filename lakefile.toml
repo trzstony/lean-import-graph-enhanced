@@ -33,3 +33,7 @@ supportInterpreter = true
 
 [[lean_lib]]
 name = "ImportGraphPackageTest"
+
+# A second fixture namespace exercises paths through filtered modules.
+[[lean_lib]]
+name = "ImportGraphPackageTestBridge"

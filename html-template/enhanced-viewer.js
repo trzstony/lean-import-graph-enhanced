@@ -1,4 +1,4 @@
-// Standalone SVG viewer for file imports and direct Lean declaration uses.
+// Standalone SVG viewer for file imports and Lean declaration uses.
 const NS = "http://www.w3.org/2000/svg";
 const svg = document.getElementById("graph");
 const edgesLayer = document.getElementById("edges");
@@ -13,13 +13,60 @@ const modules = imports.nodes().sort();
 const sourceFiles = [...new Set([...modules, ...(DECLARATIONS.files || [])])].sort();
 const declarations = new Map(DECLARATIONS.nodes.map(decl => [decl.id, decl]));
 const directImports = DECLARATIONS.directImports || [];
-// Generated internal declarations stay out of the visible graph, but their
-// metadata lets support tracing follow compiled proof dependencies through them.
+// Generated helpers and declarations in filtered files stay out of the visible
+// graph, but their metadata preserves compiled dependency paths through them.
 const supportDeclarations = new Map(
   (DECLARATIONS.supportNodes || []).map(decl => [decl.id, decl]));
 const byFile = new Map(modules.map(file => [file, []]));
 for (const decl of DECLARATIONS.nodes) byFile.get(decl.file)?.push(decl);
 for (const list of byFile.values()) list.sort((a, b) => a.id.localeCompare(b.id));
+const supportIncomingEdges = new Map();
+function addIncomingEdge(edge) {
+  if (!supportIncomingEdges.has(edge.target)) supportIncomingEdges.set(edge.target, []);
+  supportIncomingEdges.get(edge.target).push(edge);
+}
+for (const edge of DECLARATIONS.edges) {
+  addIncomingEdge(edge);
+}
+for (const edge of DECLARATIONS.supportEdges || []) {
+  addIncomingEdge(edge);
+}
+// Contract paths whose intermediate declarations are hidden. Stop at the first
+// visible prerequisite: this is a view of declaration uses, not their transitive
+// closure. Keep one shortest witness per pair for tooltips; direct uses win.
+function visibleDeclarationConnections() {
+  const result = [];
+  for (const target of declarations.keys()) {
+    const next = new Map([[target, null]]);
+    const pending = [target];
+    const found = new Set();
+    for (let i = 0; i < pending.length; i++) {
+      const current = pending[i];
+      for (const { source } of supportIncomingEdges.get(current) || []) {
+        if (declarations.has(source)) {
+          if (source === target || found.has(source)) continue;
+          found.add(source);
+          const via = [];
+          for (let step = current; step !== target; step = next.get(step)) via.push(step);
+          result.push({ source, target, via });
+        } else if (!next.has(source)) {
+          next.set(source, current);
+          pending.push(source);
+        }
+      }
+    }
+  }
+  return result;
+}
+const visibleDeclarationEdges = visibleDeclarationConnections();
+const visibleIncomingEdges = new Map();
+const visibleOutgoingEdges = new Map();
+for (const edge of visibleDeclarationEdges) {
+  if (!visibleIncomingEdges.has(edge.target)) visibleIncomingEdges.set(edge.target, []);
+  if (!visibleOutgoingEdges.has(edge.source)) visibleOutgoingEdges.set(edge.source, []);
+  visibleIncomingEdges.get(edge.target).push(edge);
+  visibleOutgoingEdges.get(edge.source).push(edge);
+}
 const fileLinks = new Map();
 function addFileLink(source, target, uses = 0) {
   if (source === target || !byFile.has(source) || !byFile.has(target)) return;
@@ -30,7 +77,7 @@ function addFileLink(source, target, uses = 0) {
 }
 imports.forEachEdge((_id, _attrs, source, target) => addFileLink(source, target));
 for (const { source, target } of directImports) addFileLink(source, target);
-for (const edge of DECLARATIONS.edges) {
+for (const edge of visibleDeclarationEdges) {
   addFileLink(declarations.get(edge.source)?.file, declarations.get(edge.target)?.file, 1);
 }
 const connections = [...fileLinks.values()].map(link => ({ ...link,
@@ -87,16 +134,23 @@ const highlightedFiles = new Set();
 const highlightedDeclarations = new Set();
 const supportRoots = new Set();
 const supportFiles = new Set();
-const supportIncomingEdges = new Map();
-function addIncomingEdge(edge) {
-  if (!supportIncomingEdges.has(edge.target)) supportIncomingEdges.set(edge.target, []);
-  supportIncomingEdges.get(edge.target).push(edge);
+// A browser dispatches the first click before it knows whether a second click
+// will follow. Delay selection long enough for a double-click to cancel it so
+// expanding a file does not briefly select it first.
+const doubleClickDelay = 200;
+const pendingNodeClicks = new Map();
+function deferNodeClick(key, action) {
+  clearTimeout(pendingNodeClicks.get(key));
+  pendingNodeClicks.set(key, setTimeout(() => {
+    pendingNodeClicks.delete(key);
+    action();
+  }, doubleClickDelay));
 }
-for (const edge of DECLARATIONS.edges) {
-  addIncomingEdge(edge);
-}
-for (const edge of DECLARATIONS.supportEdges || []) {
-  addIncomingEdge(edge);
+function cancelNodeClick(key) {
+  const timeout = pendingNodeClicks.get(key);
+  if (timeout === undefined) return;
+  clearTimeout(timeout);
+  pendingNodeClicks.delete(key);
 }
 const selectionOrder = [];
 let selected = null;
@@ -108,9 +162,10 @@ let showAllConnections = false;
 let selectionConnectionsOnly = false;
 let auditMode = false;
 const usedFilePairs = new Set();
-for (const edge of DECLARATIONS.edges) {
-  const from = declarations.get(edge.source)?.file;
-  const to = declarations.get(edge.target)?.file;
+// Hidden generated helpers still establish real cross-file dependencies.
+for (const edge of [...DECLARATIONS.edges, ...(DECLARATIONS.supportEdges || [])]) {
+  const from = (declarations.get(edge.source) || supportDeclarations.get(edge.source))?.file;
+  const to = (declarations.get(edge.target) || supportDeclarations.get(edge.target))?.file;
   if (from && to && from !== to) usedFilePairs.add(JSON.stringify([from, to]));
 }
 const importCandidates = [];
@@ -124,13 +179,16 @@ for (const { source, target } of directImports) {
   }
 }
 importCandidates.sort((a, b) => a.target.localeCompare(b.target) || a.source.localeCompare(b.source));
+
+// Use the same visible connections as the arrows and usage lists. Hidden
+// leaves alone do not count as users, and a cycle back to oneself is not a user.
 const theoremSinks = DECLARATIONS.nodes
-  .filter(decl => decl.kind === "theorem" &&
-    !DECLARATIONS.edges.some(edge => edge.source === decl.id))
+  .filter(decl => decl.kind === "theorem" && !visibleOutgoingEdges.has(decl.id))
   .sort((a, b) => a.id.localeCompare(b.id));
 
-// Follow compiled declaration uses, never import edges. The roots themselves
-// are not support; only declarations reached as prerequisites contribute files.
+// Follow compiled declaration uses, including intermediates in filtered files.
+// Only displayed prerequisite files are colored; import-only files and the roots
+// themselves are not support.
 function rebuildSupportFiles() {
   supportFiles.clear();
   const seen = new Set();
@@ -165,6 +223,11 @@ function shortName(name) { return name.split(".").at(-1); }
 function declarationLabel(decl) { return decl?.label || decl?.id || ""; }
 function declarationName(id) {
   return declarationLabel(declarations.get(id) || supportDeclarations.get(id)) || id;
+}
+function declarationConnectionTitle(edge) {
+  const endpoints = `${declarationName(edge.source)} → ${declarationName(edge.target)}`;
+  return edge.via.length ?
+    `${endpoints} (via ${edge.via.map(declarationName).join(" → ")})` : endpoints;
 }
 function folderContains(folder, path) { return path === folder || path.startsWith(folder + "."); }
 function folderColor(file) {
@@ -260,9 +323,12 @@ function renderDirectoryTree() {
         if (inGraph) {
           button.addEventListener("click", event => {
             if (event.detail > 1) return;
-            selectFile(file, true);
+            deferNodeClick(`file:${file}`, () => selectFile(file, true));
           });
-          button.addEventListener("dblclick", () => toggle(file));
+          button.addEventListener("dblclick", () => {
+            cancelNodeClick(`file:${file}`);
+            toggle(file);
+          });
         }
         item.appendChild(button);
         list.appendChild(item);
@@ -538,7 +604,7 @@ function declarationEdgeHighlight(examples) {
 function fileUsagePairs() {
   if (cachedFileUsagePairs) return cachedFileUsagePairs;
   const pairs = new Map();
-  for (const edge of DECLARATIONS.edges) {
+  for (const edge of visibleDeclarationEdges) {
     const from = declarations.get(edge.source)?.file;
     const to = declarations.get(edge.target)?.file;
     if (!from || !to || from === to) continue;
@@ -569,7 +635,7 @@ function renderSelectedConnections() {
   // import links and compiled declaration-use links. Treating it as a set of
   // pairs makes selection order irrelevant and includes every selected pair.
   const selectedDeclarationPairs = new Set();
-  for (const edge of DECLARATIONS.edges) {
+  for (const edge of visibleDeclarationEdges) {
     const sourceFile = declarations.get(edge.source)?.file;
     const targetFile = declarations.get(edge.target)?.file;
     if (sourceFile && targetFile && sourceFile !== targetFile &&
@@ -589,7 +655,7 @@ function renderSelectedConnections() {
   // Expanded selected files expose every directed declaration-use edge between
   // them. A collapsed endpoint stays represented by its file node, while an
   // explicitly selected declaration remains visible even in a collapsed file.
-  for (const edge of DECLARATIONS.edges) {
+  for (const edge of visibleDeclarationEdges) {
     const source = declarations.get(edge.source), target = declarations.get(edge.target);
     if (!source || !target) continue;
     const filesSelected = highlightedFiles.has(source.file) && highlightedFiles.has(target.file);
@@ -600,7 +666,7 @@ function renderSelectedConnections() {
       (highlightedDeclarations.has(edge.target) || expanded.has(target.file) ? edge.target : target.file) :
       selectedNodeForDeclaration(edge.target);
     if (!from || !to || (from === source.file && to === target.file)) continue;
-    add(from, to, true, `${declarationName(edge.source)} → ${declarationName(edge.target)}`);
+    add(from, to, true, declarationConnectionTitle(edge));
   }
 
   for (const { from, to, declaration, title } of entries.values()) {
@@ -624,11 +690,14 @@ function renderEdges() {
     renderSelectedConnections();
     return;
   }
+  const revealExpandedConnections = showAllConnections ||
+    highlightedFiles.size > 0 || highlightedDeclarations.size > 0;
   const usagePairs = showAllConnections && !expanded.size ? fileUsagePairs() : new Map();
   if (usagePairs !== cachedFileUsagePairs) {
-    for (const edge of DECLARATIONS.edges) {
+    for (const edge of visibleDeclarationEdges) {
       const source = declarations.get(edge.source), target = declarations.get(edge.target);
       if (!source || !target) continue;
+      if (!revealExpandedConnections) continue;
       if (!showAllConnections && !expanded.has(source.file) && !expanded.has(target.file)) continue;
       const from = expanded.has(source.file) ? edge.source : source.file;
       const to = expanded.has(target.file) ? edge.target : target.file;
@@ -660,7 +729,7 @@ function renderEdges() {
       highlight.directions === " outgoing" ? "Outgoing dependent" :
       highlight.directions ? "Incoming and outgoing" : "Declaration use";
     titled(node, entry.examples.slice(0, 8)
-      .map(edge => `${relationship}: ${declarationName(edge.source)} → ${declarationName(edge.target)}`).join("\n"));
+      .map(edge => `${relationship}: ${declarationConnectionTitle(edge)}`).join("\n"));
     edgesLayer.appendChild(node);
     const sourceFile = fromDecl?.file || entry.from, targetFile = toDecl?.file || entry.to;
     visibleUsageFiles.add(JSON.stringify([sourceFile, targetFile]));
@@ -722,9 +791,10 @@ function renderFiles() {
     titled(group, file);
     group.addEventListener("click", event => {
       if (nodeActivationSuppressed() || event.detail > 1) return;
-      selectFile(file);
+      deferNodeClick(`file:${file}`, () => selectFile(file));
     });
     group.addEventListener("dblclick", () => {
+      cancelNodeClick(`file:${file}`);
       if (!nodeActivationSuppressed()) toggle(file);
     });
     group.addEventListener("keydown", event => {
@@ -752,10 +822,11 @@ function renderFiles() {
       child.addEventListener("click", event => {
         event.stopPropagation();
         if (nodeActivationSuppressed() || event.detail > 1) return;
-        selectDeclaration(decl.id);
+        deferNodeClick(`declaration:${decl.id}`, () => selectDeclaration(decl.id));
       });
       child.addEventListener("dblclick", event => {
         event.stopPropagation();
+        cancelNodeClick(`declaration:${decl.id}`);
         if (!nodeActivationSuppressed()) traceDeclaration(decl.id);
       });
       child.addEventListener("keydown", event => {
@@ -783,22 +854,26 @@ function updateDetails() {
     const decl = declarations.get(selected.id);
     summary.textContent = `${decl.kind} in ${decl.file}. ${supportRoots.has(selected.id) ?
       `${supportFiles.size} supporting file${supportFiles.size === 1 ? "" : "s"} colored.` :
-      "Showing direct connections."}`;
+      "Showing visible connections, including paths through hidden declarations."}`;
   }
   details.appendChild(summary);
   if (selected?.type !== "declaration") return;
-  const uses = DECLARATIONS.edges.filter(edge => edge.target === selected.id).map(edge => edge.source).sort();
-  const users = DECLARATIONS.edges.filter(edge => edge.source === selected.id).map(edge => edge.target).sort();
-  for (const [label, values, direction] of
-      [["Uses", uses, "incoming"], ["Used by", users, "outgoing"]]) {
+  const uses = [...(visibleIncomingEdges.get(selected.id) || [])]
+    .sort((a, b) => a.source.localeCompare(b.source));
+  const users = [...(visibleOutgoingEdges.get(selected.id) || [])]
+    .sort((a, b) => a.target.localeCompare(b.target));
+  for (const [label, values, direction, endpoint] of
+      [["Uses", uses, "incoming", "source"], ["Used by", users, "outgoing", "target"]]) {
     const title = document.createElement("h3");
     title.textContent = `${label} (${values.length})`;
     title.className = `connection-heading ${direction}`;
     details.appendChild(title);
     const list = document.createElement("ul");
-    for (const value of values) {
+    for (const edge of values) {
       const item = document.createElement("li");
-      item.textContent = declarationName(value);
+      item.textContent = declarationName(edge[endpoint]) +
+        (edge.via.length ? " (via hidden declarations)" : "");
+      item.title = declarationConnectionTitle(edge);
       list.appendChild(item);
     }
     details.appendChild(list);
@@ -1069,7 +1144,7 @@ function renderTheoremSinks() {
   heading.textContent = `Theorem sinks (${theoremSinks.length})`;
   sinksPanel.appendChild(heading);
   const explanation = document.createElement("p");
-  explanation.textContent = "Theorems with no outgoing declaration-use edge: no compiled declaration in this graph uses them.";
+  explanation.textContent = "Source theorems with no other visible declaration using them, directly or through hidden helpers or filtered files. Generated theorems and structure fields are excluded.";
   sinksPanel.appendChild(explanation);
   if (!theoremSinks.length) return;
   const sinkTable = document.createElement("table");

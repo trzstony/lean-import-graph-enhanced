@@ -8,3 +8,8 @@ import ImportGraphPackageTest.Used
 import ImportGraphPackageTest.ToTarget
 import ImportGraphPackageTest.WithSorry.Def
 import ImportGraphPackageTest.WithSorry.Thm
+import ImportGraphPackageTest.Declarations
+import ImportGraphPackageTest.FilteredSupport.Consumer
+import ImportGraphPackageTest.Support
+import ImportGraphPackageTest.HiddenConnections.Consumer
+import ImportGraphPackageTest.SourceTheorems

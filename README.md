@@ -16,7 +16,10 @@ import auditing.
 - **File and declaration exploration.** Expand a file to see its definitions,
   theorems, private lemmas and theorems, constructors, inductives, axioms, and
   other declarations. Teal arrows show declaration prerequisites; orange arrows
-  show declarations that use the selected declaration.
+  show declarations that use the selected declaration. Arrows and the Uses / Used by
+  lists follow paths through hidden declarations, stopping at the next visible
+  declaration. Repeated paths count once; hover over a connection or list item
+  to see a shortest hidden path. Direct references take precedence when present.
 - **Interactive navigation.** Search files or declarations, drag to pan,
   fit the graph, reset the view, and use keyboard focus to inspect a graph
   without a mouse.
@@ -29,16 +32,31 @@ import auditing.
 - **Directory coloring and support tracing.** Color independent folders or a
   complete subtree. Selecting a declaration can highlight the files that provide
   its transitive compiled prerequisites, including generated internal proof
-  helpers; private lemmas and theorems remain visible in their file. Import-only
-  files are not marked as declaration support.
+  helpers and paths through filtered modules. Filtering controls which files are
+  displayed and colored; it does not cut paths between retained declarations.
+  Private lemmas and theorems remain visible in their file. Import-only files
+  are not marked as declaration support. Unrelated external branches are pruned
+  from the exported support data.
 - **File-decoupling audit.** `--file-decoupling report.md` compares direct
   source imports with cross-file declaration uses and writes a reviewable
   Markdown table. The viewer exposes the same candidates and preserves direct
   source-import links while reducing transitive-only edges in the layout.
-- **Theorem-sink report.** The sink icon opens a separate list of visible
-  theorems with no outgoing declaration-use edge in the compiled graph. Generated
-  equation and matcher details are excluded from both the declaration graph and
-  this report.
+- **Theorem-sink report.** The sink icon lists source theorems with no use by
+  another visible declaration, including uses through hidden generated helpers
+  and filtered modules. This is scoped to visible consumers: a user that exists
+  only outside the displayed scope does not by itself remove a theorem from the list.
+  The exporter verifies the selected name against an explicit `theorem` or
+  `lemma` header in the original source. A narrow source location alone does
+  not establish authorship: generated lemmas can select attribute arguments.
+  Generated constructor, extensionality, and attribute lemmas stay hidden;
+  structure projections are shown as fields. Generated helpers remain in the
+  support graph for dependency tracing. This check needs compiled declaration
+  ranges and matching `.lean` sources (found through `LEAN_SRC_PATH` under
+  `lake exe`). Missing sources produce a warning and their theorems remain
+  available for dependency tracing without being listed as authored sinks.
+  Custom theorem-generating commands are conservatively treated as generated;
+  macros using the ordinary `lemma` spelling are supported. Rebuild after
+  changing source files before exporting a graph.
 - **Source-only analysis.** `ImportGraph.Imports.FromSource` parses imports
   directly from `.lean` files, so scripts and linters can inspect files before
   they are compiled.
@@ -100,6 +118,7 @@ needed when exporting formats other than `.dot`, `.gexf`, or `.html`.
 ```bash
 lake build
 lake test
+node --test --test-concurrency=1 tests/*.test.cjs
 lake exe graph --to ImportGraphPackageTest.ToTarget ImportGraphPackageTest/test.html
 ```
 

@@ -4,10 +4,12 @@ public import Cli.Basic
 import ImportGraph.Export.DotFile
 import ImportGraph.Export.Gexf
 import ImportGraph.Graph.Filter
+import ImportGraph.Graph.Support
 import ImportGraph.Imports.FromSource
 import ImportGraph.Imports.ImportGraph
 import ImportGraph.Imports.RequiredModules
 import ImportGraph.Lean.Name
+import ImportGraph.Lean.Declaration
 import ImportGraph.Util.CurrentModule
 import ImportGraph.Util.FindSorry
 import Lean.Data.NameMap.AdditionalOperations
@@ -79,40 +81,8 @@ private def GraphProgress.finish (progress : GraphProgress) : IO Unit := do
     progress.stream.putStr "\n"
     progress.stream.flush
 
-/-- The kinds shown inside expanded file nodes. -/
-private def declarationKind (ci : ConstantInfo) : String :=
-  match ci with
-  | .thmInfo _ => "theorem"
-  | .defnInfo _ => "definition"
-  | .axiomInfo _ => "axiom"
-  | .opaqueInfo _ => "opaque"
-  | .inductInfo _ => "inductive"
-  | .ctorInfo _ => "constructor"
-  | .recInfo _ => "recursor"
-  | .quotInfo _ => "quotient"
-
-/-- Keep public declarations and user-authored private declarations visible while
-    routing generated equation and matcher details through the support graph. -/
-private def isUserAuthoredPrivateName (name : Name) : Bool :=
-  isPrivateName name &&
-    !((privateToUserName name).components.any (fun component => component.isInternalDetail))
-
-private def isVisibleDeclarationName (name : Name) : Bool :=
-  !name.isInternal || isUserAuthoredPrivateName name
-
 private def declarationLabel (name : Name) : String :=
   (if isPrivateName name then privateToUserName name else name).toString
-
-/-- Match the declaration filter used by the package GEXF exporter. -/
-private def isGexfBlacklisted (env : Environment) (name : Name) : Bool :=
-  name == ``sorryAx ||
-    name matches .str _ "inj" ||
-    name matches .str _ "noConfusionType" ||
-    (name.isInternalDetail && !isUserAuthoredPrivateName name) ||
-    Lean.isAuxRecursor env name ||
-    Lean.isNoConfusion env name ||
-    Lean.isRecCore env name ||
-    Lean.Meta.isMatcherCore env name
 
 private def gexfNode (name module : Name) (size : Nat) : String :=
   s!"<node id=\"{name}\" label=\"{name}\"><attvalues><attvalue for=\"0\" value=\"{size}\" />" ++
@@ -123,7 +93,7 @@ private def gexfEdge (source target : Name) : String :=
 
 /-- Create the GEXF file while reporting progress through declaration counting. -/
 private def graphToGexf (graph : NameMap (Array Name)) (module : Name)
-    (env : Environment) (progress : GraphProgress) : IO String := do
+    (env : Environment) (authored : NameSet) (progress : GraphProgress) : IO String := do
   let declarations := env.const2ModIdx.toList
   let total := declarations.length
   let checkpoint := max 1 (total / 100)
@@ -134,8 +104,8 @@ private def graphToGexf (graph : NameMap (Array Name)) (module : Name)
     if index % checkpoint == 0 || index == total then
       progress.render (26 + 5 * index / max 1 total)
         s!"Counting declarations ({index}/{total})"
-    if isGexfBlacklisted env name then continue
     let moduleName := env.allImportedModuleNames[moduleIndex]!
+    if !graph.contains moduleName || !isVisibleGraphDeclaration env name authored then continue
     sizes := sizes.insert moduleName ((sizes.getD moduleName 0) + 1)
   let nodes := graph.foldl (fun output name _ =>
     output ++ gexfNode name module (sizes.getD name 0)) ""
@@ -164,15 +134,26 @@ private def graphToGexf (graph : NameMap (Array Name)) (module : Name)
     </gexf>
     "
 
-/-- Extract direct declaration uses and file-decoupling candidates from the loaded environment.
-    Declaration edges point from a used declaration to the declaration that uses it. -/
+/-- Extract declaration uses independently of the module display filter.
+
+Declarations in filtered modules remain as hidden intermediates on paths between
+retained declarations. Only those paths are serialized, so filtering does not
+embed unrelated external prerequisites. Edges point from a used declaration to
+its user and always represent original direct uses. -/
 private def declarationGraphData (env : Environment) (modules : NameMap (Array Name))
     (directImports : Array (Name × Name)) (sourceFiles : Array String)
-    (progress : GraphProgress) : IO (Json × Array (Name × Name)) := do
+    (authored : NameSet) (progress : GraphProgress) : IO (Json × Array (Name × Name)) := do
   let constants := env.constants.map₁.toList
   let total := constants.length
   let checkpoint := max 1 (total / 100)
+  -- A declaration path must follow an import path between its owning modules.
+  -- Use the complete import graph for this conservative bound, never the
+  -- display-filtered graph. This avoids indexing unrelated external libraries
+  -- while retaining every possible intermediate module.
+  let retainedModules := (modules.toList.map Prod.fst).toArray
+  let supportModules := env.importGraph.retainPathsBetween retainedModules
   let mut allDeclModules : NameMap Name := {}
+  let mut retainedNames : Array Name := #[]
   let mut declModules : NameMap Name := {}
   let mut nodes : Array Json := #[]
   let mut index := 0
@@ -183,42 +164,66 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
         s!"Indexing declarations ({index}/{total})"
     let some idx := env.getModuleIdxFor? name | continue
     let moduleName := env.header.moduleNames[idx.toNat]!
-    if !modules.contains moduleName then continue
+    if !supportModules.contains moduleName then continue
     allDeclModules := allDeclModules.insert name moduleName
-    if !isVisibleDeclarationName name then continue
+    if !modules.contains moduleName then continue
+    retainedNames := retainedNames.push name
+    if !isVisibleGraphDeclaration env name authored then continue
     declModules := declModules.insert name moduleName
     nodes := nodes.push <| Json.mkObj [
       ("id", Json.str name.toString),
       ("label", Json.str (declarationLabel name)),
       ("file", Json.str moduleName.toString),
-      ("kind", Json.str (declarationKind ci))]
+      ("kind", Json.str (graphDeclarationKind env ci))]
 
+  -- Explore prerequisites in the full environment, including filtered modules.
+  -- Seed with hidden declarations in retained files as well, preserving their
+  -- direct cross-file uses for the import audit.
+  let mut pending := retainedNames
+  let mut scheduled := NameSet.ofArray retainedNames
+  let mut dependencies : NameMap (Array Name) := {}
+  index := 0
+  while index < pending.size do
+    let name := pending[index]!
+    index := index + 1
+    if index % checkpoint == 0 then
+      progress.render (55 + 30 * index / max 1 total)
+        s!"Tracing declaration uses ({index} visited)"
+    let some ci := env.find? name | continue
+    let usedConstants := ci.getUsedConstantsAsSet.toArray.filter fun used =>
+      used != name && allDeclModules.contains used
+    dependencies := dependencies.insert name usedConstants
+    for used in usedConstants do
+      if !scheduled.contains used then
+        scheduled := scheduled.insert used
+        pending := pending.push used
+
+  progress.render 90 "Keeping dependency paths between retained declarations"
+  let supportGraph := dependencies.retainPathsBetween retainedNames
   let mut edges : Array Json := #[]
   let mut supportEdges : Array Json := #[]
   let mut supportNames : NameSet := {}
   let mut usedFilePairs : NameMap NameSet := {}
-  index := 0
-  for (name, ci) in constants do
-    index := index + 1
-    if index % checkpoint == 0 || index == total then
-      progress.render (55 + 35 * index / max 1 total)
-        s!"Tracing declaration uses ({index}/{total})"
+  for (name, usedConstants) in supportGraph.toList do
     let some targetModule := allDeclModules.find? name | continue
-    for used in ci.getUsedConstantsAsSet do
-      if used == name then continue
+    let targetVisible := declModules.contains name
+    for used in usedConstants do
       let some sourceModule := allDeclModules.find? used | continue
       let edge := Json.mkObj [
           ("source", Json.str used.toString),
           ("target", Json.str name.toString)]
-      if !isVisibleDeclarationName name || !isVisibleDeclarationName used then
+      -- Both endpoints of a direct displayed-file use are retained, including
+      -- hidden helpers, so pruning preserves the original import audit.
+      if sourceModule != targetModule then
+        let usedModules := (usedFilePairs.find? targetModule).getD {}
+        usedFilePairs := usedFilePairs.insert targetModule (usedModules.insert sourceModule)
+      let sourceVisible := declModules.contains used
+      if !targetVisible || !sourceVisible then
         supportEdges := supportEdges.push edge
-        if !isVisibleDeclarationName name then supportNames := supportNames.insert name
-        if !isVisibleDeclarationName used then supportNames := supportNames.insert used
-      else if declModules.contains name && declModules.contains used then
+        if !targetVisible then supportNames := supportNames.insert name
+        if !sourceVisible then supportNames := supportNames.insert used
+      else
         edges := edges.push edge
-        if sourceModule != targetModule then
-          let usedModules := (usedFilePairs.find? targetModule).getD {}
-          usedFilePairs := usedFilePairs.insert targetModule (usedModules.insert sourceModule)
 
   let mut supportNodes : Array Json := #[]
   for (name, ci) in constants do
@@ -228,7 +233,7 @@ private def declarationGraphData (env : Environment) (modules : NameMap (Array N
         ("id", Json.str name.toString),
         ("label", Json.str (declarationLabel name)),
         ("file", Json.str moduleName.toString),
-        ("kind", Json.str (declarationKind ci))]
+        ("kind", Json.str (graphDeclarationKind env ci))]
 
   progress.render 92 "Checking file-decoupling candidates"
   let mut candidates : Array (Name × Name) := #[]
@@ -454,9 +459,11 @@ def importGraphCLI (args : Cli.Parsed) : IO UInt32 := do
       let graph₂ := match args.flag? "to" with
         | none => graph.filter (fun n _ => ! if to.contains `Mathlib then #[`Mathlib, `Mathlib.Tactic].contains n else to.contains n)
         | some _ => graph
+      progress.render 26 "Checking source theorem headers"
+      let authored ← sourceTheoremNames env (NameSet.ofArray (graph₂.toList.map Prod.fst).toArray)
       if extensions.contains "gexf" || wantsHtml then
         progress.render 26 "Counting declarations for file graph"
-        let gexfFile ← graphToGexf graph₂ toModule env progress
+        let gexfFile ← graphToGexf graph₂ toModule env authored progress
         outFiles := outFiles.insert "gexf" gexfFile
         progress.render 32 "Generated file graph"
       if wantsHtml || (args.flag? "file-decoupling").isSome then
@@ -464,7 +471,7 @@ def importGraphCLI (args : Cli.Parsed) : IO UInt32 := do
         let files ← sourceModules toModule
         progress.render 35 "Indexing declarations"
         let (declarationJson, candidates) ←
-          declarationGraphData env graph₂ directImports files progress
+          declarationGraphData env graph₂ directImports files authored progress
         let declarationSize ← IO.mkRef 0
         progress.render 94 "Serializing declaration graph"
         let declarationText := declarationJson.compress
